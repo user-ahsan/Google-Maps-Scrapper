@@ -1,167 +1,91 @@
-# Google Maps Scraper
+# Google Maps Scraper (Google Sheets Edition)
 
-A robust, production-ready Python tool for scraping business data from Google Maps. This scraper supports specialized queries, duplicate detection, and automated data export to CSV and Excel formats. It is designed to run indefinitely if needed, making it suitable for long-running data collection tasks.
+A robust, production-ready Python tool for scraping business data from Google Maps and saving it directly to **Google Sheets**.
+
+This updated version reads queries from `input.txt` and appends all results to a Google Sheet, making data collection seamless and collaborative.
 
 ## 🚀 Features
 
-- **Multi-format Export**: Automatically saves data to both `.csv` and `.xlsx` files.
-- **Duplicate Detection**: Smart hashing prevents duplicate entries based on business name and contact info.
+- **Google Sheets Integration**: Automatically appends scraped data to your designated Google Sheet.
+- **Bulk Search**: Reads multiple queries from `input.txt`.
+- **Duplicate Detection**: Basic duplicate detection (further enabled by Sheet logic).
 - **Resilient**: Handles network timeouts and loading states automatically.
-- **Configurable**: Run with command-line arguments or using a bulk input file.
-- **Cross-Platform**: Fully compatible with Linux, Windows, WSL, and macOS.
 
 ---
 
 ## 📋 Prerequisites
 
 - **Python 3.8+** must be installed on your system.
-- **Google Chrome** (optional, but recommended for visual debugging).
+- **Google Cloud Service Account**: You need a `credentials.json` file.
+- **Google Sheet**: A Sheet shared with your service account.
 
 ---
 
-## 🛠️ Installation Guide
+## 🛠️ Installation & Setup
 
-Choose the instructions that match your operating system.
+### 1. Install Dependencies
+```bash
+# Navigate to project folder
+cd /path/to/Googles-Maps-Scraper
 
-### Option A: Linux / macOS / Windows WSL (Ubuntu)
+# Create/Activate venv
+python3 -m venv venv
+source venv/bin/activate
 
-1.  **Open your terminal** (Terminal, iTerm, or WSL Console).
-2.  **Navigate to the project folder:**
-    ```bash
-    cd /path/to/Googles-Maps-Scraper-master
-    ```
-3.  **Set up the Virtual Environment:**
-    ```bash
-    # Create virtual environment
-    python3 -m venv venv
+# Install requirements (including gspread)
+pip install -r requirements.txt
+playwright install chromium
+```
 
-    # Activate it
-    source venv/bin/activate
-    ```
-4.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-5.  **Install Playwright Browsers:**
-    ```bash
-    playwright install chromium
-    ```
-
-### Option B: Windows (Native PowerShell/CMD)
-
-1.  **Open Command Prompt (cmd) or PowerShell**.
-2.  **Navigate to the project folder:**
-    ```cmd
-    cd C:\path\to\Googles-Maps-Scraper-master
-    ```
-3.  **Set up the Virtual Environment:**
-    ```cmd
-    :: Create virtual environment
-    python -m venv venv
-
-    :: Activate it
-    venv\Scripts\activate
-    ```
-4.  **Install Dependencies:**
-    ```cmd
-    pip install -r requirements.txt
-    ```
-5.  **Install Playwright Browsers:**
-    ```cmd
-    playwright install chromium
-    ```
+### 2. Google Sheets Setup
+1.  **Get Credentials**: Obtain a `credentials.json` file for a Google Service Account (from Google Cloud Console).
+2.  **Place File**: Save `credentials.json` in the **root** of this project folder.
+3.  **Share Sheet**:
+    -   Create a new Google Sheet (e.g., named "Gmaps Leads").
+    -   Open `credentials.json` and copy the `client_email` address.
+    -   **Share** your Google Sheet with that email address (give "Editor" access).
 
 ---
 
-## ⚙️ Configuration
+## 🏃 Usage
 
-### Bulk Search (Recommended)
-Edit the `input.txt` file in the root directory. Add one search query per line.
-
-**Example `input.txt`:**
+### 1. Add Queries
+Edit `input.txt` and add your search terms (one per line):
 ```text
 retail store in riyadh
 coffee shops in jeddah
 restaurants in london
 ```
 
-### Command Line Arguments
-You can also pass arguments directly to the script:
-- `-s "search query"`: Specific search term (overrides `input.txt`).
-- `-t 100`: Total number of results to scrape per query (default: 1,000,000).
-- `-headed`: See the browser window while scraping (useful for debugging).
+### 2. Run the Scraper
+Run the new proper script:
+```bash
+./venv/bin/python3 leads_scrapping.py
+```
+
+### 3. Check Results
+- The script will process each query in `input.txt`.
+- Results are **appended** to the first worksheet of your Google Sheet.
+- **Columns**: `Name`, `Address`, `Website`, `Phone`, `Location`, `Reviews`, `Coordinates`, etc.
 
 ---
 
-## 🏃 usage
-
-### 1. Standard Run
-Runs through the queries in `input.txt` once and exits.
-
-**Linux / macOS / WSL:**
-```bash
-source venv/bin/activate
-python main.py
-```
-
-**Windows:**
-```cmd
-venv\Scripts\activate
-python main.py
-```
-
-### 2. Infinite Loop Mode (Production)
-Use this mode to keep the scraper running continuously. If it crashes or finishes all tasks, it will automatically restart after a short delay.
-
-**Linux / macOS / WSL:**
-Make the script executable (first time only) and run it:
-```bash
-chmod +x run_forever.sh
-./run_forever.sh
-```
-
-**Windows:**
-Double-click `run_forever.bat` or run it from the command line:
-```cmd
-run_forever.bat
-```
-
-### 3. Visual Debugging
-To watch the bot work (useful if you suspect Google is blocking requests or layout has changed):
-
-```bash
-python main.py -headed
-```
+## ⚙️ Configuration
+You can tweak settings in `leads_scrapping.py`:
+- `SHEET_NAME`: Name of your Google Sheet (Default: "Gmaps Leads").
+- `TOTAL_RESULTS_PER_QUERY`: Max results per query (Default: 100).
 
 ---
 
 ## 📂 Output
-
-Data is saved automatically in the `GMaps Data` folder, organized by date.
-
-**Directory Structure:**
-```text
-Googles-Maps-Scraper-master/
-├── GMaps Data/
-│   ├── 2025-12-25/
-│   │   ├── retail_store_in_riyadh.csv
-│   │   └── retail_store_in_riyadh.xlsx
-│   └── 2025-12-27/
-│       ├── ...
-```
+All data goes to the **Google Sheet**. Local CSV/Excel files are NOT generated by default in this version to save space.
 
 ---
 
 ## ❓ Troubleshooting
 
-**Q: `ModuleNotFoundError: No module named ...`**
-A: Ensure your virtual environment is activated (`source venv/bin/activate` or `venv\Scripts\activate`) and you have run `pip install -r requirements.txt`.
+**Q: `SpreadsheetNotFound` Error**
+A: Ensure the Sheet name matches `SHEET_NAME` in the script AND that you have **shared** the sheet with the Service Account email found in `credentials.json`.
 
-**Q: The scraper opens the browser but immediately closes.**
-A: Pass the `-headed` flag to see if an error message appears on the screen.
-
-**Q: "Access Denied" or Permission errors.**
-A: Ensure you have read/write permissions for the project directory. On Linux/Mac, try `chmod +x run_forever.sh`.
-
-**Q: Does this run on WSL1 or WSL2?**
-A: Both work, but WSL2 is recommended for better performance. If using WSL1, you might strictly need the headless mode.
+**Q: `credentials.json` not found**
+A: Make sure the file is exactly named `credentials.json` and is in the same folder as `leads_scrapping.py`.

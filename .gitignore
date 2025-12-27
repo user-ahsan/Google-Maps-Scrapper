@@ -190,3 +190,7 @@ GMaps Data/
 # OS Generated
 .DS_Store
 Thumbs.db
+
+# Credentials
+credentials.json
+
