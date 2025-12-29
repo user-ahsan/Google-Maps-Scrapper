@@ -50,7 +50,7 @@ class BusinessList:
     _seen_businesses: set = field(default_factory=set, init=False)
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     save_at = os.path.join('GMaps Data', today)
-    os.makedirs(save_at, exist_ok=True)
+    # os.makedirs(save_at, exist_ok=True)  <-- REMOVED: Prevent auto-creation
 
     def add_business(self, business: Business):
         """Add a business to the list if it's not a duplicate based on key attributes"""
@@ -74,6 +74,7 @@ class BusinessList:
         Args:
             filename (str): filename
         """
+        os.makedirs(self.save_at, exist_ok=True)
         self.dataframe().to_excel(f"{self.save_at}/{filename}.xlsx", index=False)
 
     def save_to_csv(self, filename):
@@ -82,6 +83,7 @@ class BusinessList:
         Args:
             filename (str): filename
         """
+        os.makedirs(self.save_at, exist_ok=True)
         self.dataframe().to_csv(f"{self.save_at}/{filename}.csv", index=False)
 
 def extract_coordinates_from_url(url: str) -> tuple[float, float]:

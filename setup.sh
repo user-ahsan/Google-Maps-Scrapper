@@ -9,6 +9,15 @@ echo "=========================================="
 echo "   Google Maps Scraper - Auto Setup"
 echo "=========================================="
 
+# 0. Safety Check: Deactivate existing venv
+if [[ "$VIRTUAL_ENV" != "" ]]; then
+    echo "[*] Detected active virtual environment ($VIRTUAL_ENV). Deactivating..."
+    # We can't rely on 'deactivate' function being available in subshell/script
+    # But we can strip it from PATH to be safe
+    export PATH=$(echo $PATH | tr ":" "\n" | grep -v "$VIRTUAL_ENV" | tr "\n" ":")
+    unset VIRTUAL_ENV
+fi
+
 # 1. OS Detection
 OS="$(uname -s)"
 case "${OS}" in
@@ -28,10 +37,25 @@ if [[ "$machine" == "Cygwin" || "$machine" == "MinGW" ]]; then
 fi
 
 # 2. Check for Python
-if command -v python3 &>/dev/null; then
-    PYTHON_CMD="python3"
-elif command -v python &>/dev/null; then
-    PYTHON_CMD="python"
+# We explicitly want the SYSTEM python, not the one inside the venv we might delete.
+if [ -f "/usr/bin/python3" ]; then
+    PYTHON_CMD="/usr/bin/python3"
+elif [ -f "/usr/local/bin/python3" ]; then
+    PYTHON_CMD="/usr/local/bin/python3"
+elif command -v python3 &>/dev/null; then
+    # Fallback to whatever is in path, but check if it's our local venv
+    CANDIDATE="$(command -v python3)"
+    if [[ "$CANDIDATE" == *"$(pwd)/venv"* ]]; then
+        echo "[!] Warning: 'python3' points to local venv. Trying to find system python..."
+        # Try to find a python that isn't this one
+        PYTHON_CMD=$(which -a python3 | grep -v "$(pwd)/venv" | head -n 1)
+        if [ -z "$PYTHON_CMD" ]; then
+             echo "[X] Error: Could not find system python3. Please deactivate venv and try again."
+             exit 1
+        fi
+    else
+        PYTHON_CMD="$CANDIDATE"
+    fi
 else
     echo "[X] Error: Python 3 could not be found. Please install Python 3.8+."
     exit 1

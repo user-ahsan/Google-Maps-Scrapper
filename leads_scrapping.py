@@ -103,7 +103,8 @@ def scrape_data(page, search_for, total):
             listing.click()
             page.wait_for_timeout(2000)
             
-            print(f"Scraping {i+1}/{len(listings)}", end='\r')
+            # Detailed Logging
+            print(f"[{i+1}/{len(listings)}] Clicking listing...", end='\r')
 
             name_attribute = 'h1.DUwDvf' 
             address_xpath = '//button[@data-item-id="address"]//div[contains(@class, "fontBodyMedium")]'
@@ -182,8 +183,12 @@ def scrape_data(page, search_for, total):
             business.google_maps_link = page.url
 
             business_list.add_business(business)
+            
+            # Print success summary for this item
+            print(f"✅ Found: {business.name[:30]:<30} | ⭐ {business.reviews_average or 'N/A'} ({business.reviews_count or 0}) | 📞 {business.phone_number or 'No Phone'}")
+            
         except Exception as e:
-            print(f'Error occurred scraping item {i}: {e}')
+            print(f'❌ Error scraping item {i}: {e}')
     
     return business_list
 
@@ -208,12 +213,19 @@ def main():
     try:
         client = connect_to_sheets()
         spreadsheet = client.open(SHEET_NAME)
-        # Using the first sheet or a specific 'Results' sheet?
-        # User said "add the result ... to the google sheet". 
-        # Let's ensure we append to the first sheet or a designated one.
-        # Assuming the first sheet is where they want the data.
-        worksheet = spreadsheet.sheet1
-        print(f"Connected to sheet: {SHEET_NAME}")
+        
+        # PRINT THE URL so the user knows exactly where data is going
+        print(f"✅ Connected to Sheet: '{spreadsheet.title}'")
+        print(f"🔗 Sheet URL: https://docs.google.com/spreadsheets/d/{spreadsheet.id}")
+
+        # Explicitly get or create a 'Leads' worksheet to avoid 'Sheet1' ambiguity
+        try:
+            worksheet = spreadsheet.worksheet("Leads")
+        except gspread.WorksheetNotFound:
+            print("Creating new worksheet named 'Leads'...")
+            worksheet = spreadsheet.add_worksheet(title="Leads", rows=1000, cols=20)
+
+        print(f"📝 Writing to Worksheet: '{worksheet.title}'")
         
         # Check/Add headers if empty
         if not worksheet.get_all_values():
