@@ -17,7 +17,7 @@ except ImportError:
 # --- Configuration ---
 SHEET_NAME = "Gmaps Leads"  # The Google Sheet to save results to
 CREDENTIALS_FILE = "credentials.json"
-TOTAL_RESULTS_PER_QUERY = 100 # Adjust as needed or make dynamic
+TOTAL_RESULTS_PER_QUERY = 30000 # Effectively infinite, controlled by "End of list"
 INPUT_FILE = "input.txt"
 
 def connect_to_sheets():
@@ -229,13 +229,34 @@ def scrape_data(page, search_for, total):
     
     # Scroll and load loop
     # Optimization: Target the specific feed div for scrolling
+    # Scroll and load loop
+    # Optimization: Target the specific feed div for scrolling
     feed_selector = 'div[role="feed"]'
     
+    no_change_counter = 0
+    MAX_NO_CHANGE = 30 # Safety break only if stuck for very long (e.g. 2 mins) without "End of List"
+    
     while True:
+        # Check for "End of list" message (Primary Text Base)
+        # Using text is more reliable than dynamic IDs
+        end_indicator = page.locator('//span[contains(text(), "You\'ve reached the end of the list")]')
+        if end_indicator.count() > 0:
+            print(f"\n✅ 'You've reached the end of the list' message detected.")
+            listings = page.locator('//a[contains(@href, "https://www.google.com/maps/place")]').all()
+            print(f"Arrived at all available.\nTotal Found: {len(listings)}")
+            break
+        
+        # Check for class based indicator (Fallback)
+        if page.locator('span.HlvSq').count() > 0: 
+            print(f"\n✅ End of list detected (Class Match).")
+            listings = page.locator('//a[contains(@href, "https://www.google.com/maps/place")]').all()
+            print(f"Arrived at all available.\nTotal Found: {len(listings)}")
+            break
+
         # Check if feed exists, if not, try hovering generic list
         if page.locator(feed_selector).count() > 0:
             # Scroll the feed directly
-            page.locator(feed_selector).evaluate("node => node.scrollTop += 10000") # More aggressive scroll
+            page.locator(feed_selector).evaluate("node => node.scrollTop += 10000")
         else:
             # Scroll and load loop
             page.mouse.wheel(0, 10000)
@@ -245,26 +266,29 @@ def scrape_data(page, search_for, total):
             '//a[contains(@href, "https://www.google.com/maps/place")]'
         ).count()
 
-        if current_count >= total:
+        # Respect explicit limit if provided (e.g. for testing)
+        # Assuming typical use is effectively infinite, but keeps the parameter functional
+        if total and current_count >= total:
             listings = page.locator(
                 '//a[contains(@href, "https://www.google.com/maps/place")]'
             ).all()[:total]
-            print(f"Total Found: {len(listings)}")
+            print(f"Total Found: {len(listings)} (Limit Reached)")
             break
         
         if current_count == previously_counted:
-            retry_count += 1
-            print(f"Retry {retry_count}/{MAX_RETRIES} - Waiting for more results...", end='\r')
-            if retry_count >= MAX_RETRIES:
-                listings = page.locator(
-                    '//a[contains(@href, "https://www.google.com/maps/place")]'
-                ).all()
-                print(f"\nArrived at all available or stalled.\nTotal Found: {len(listings)}")
-                break
-            page.wait_for_timeout(4000) # Increased wait time
+            no_change_counter += 1
+            print(f"Scrolling... ({current_count} found) - Waiting for 'End of list'...", end='\r')
+            
+            # Safety break if we are stuck for too long without seeing the message
+            if no_change_counter >= MAX_NO_CHANGE:
+                 print("\n⚠️ Max wait time reached without 'End of List' message. Proceeding with current results.")
+                 listings = page.locator('//a[contains(@href, "https://www.google.com/maps/place")]').all()
+                 break
+                 
+            page.wait_for_timeout(4000) 
         else:
             previously_counted = current_count
-            retry_count = 0
+            no_change_counter = 0
             print(
                 f"Currently Loaded: {current_count}", end='\r'
             )
