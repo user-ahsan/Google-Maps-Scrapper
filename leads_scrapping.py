@@ -552,6 +552,14 @@ def main():
                 
                 # Handle NaNs
                 df_final = df_final.fillna("")
+
+                # ESCAPE PHONE NUMBERS (Fix for Formula Parse Error)
+                # Google Sheets treats values starting with '=' or '+' as formulas.
+                # We prepend a single quote to force text formatting for phone entries.
+                for col in df_final.columns:
+                    if any(x in str(col).lower() for x in ['phone', 'mobile', 'tel']):
+                         df_final[col] = df_final[col].apply(lambda x: f"'{x}" if str(x).strip().startswith('+') else x)
+
                 data_to_upload = df_final.values.tolist()
                 
                 # Explicitly calculate the next empty row based on Column A
