@@ -23,21 +23,53 @@ This updated version reads queries from `input.txt` and appends all results to a
 
 ## 🛠️ Installation & Setup
 
-### 1. Install Dependencies
-```bash
-# Navigate to project folder
-cd /path/to/Googles-Maps-Scraper
+### 1. 🛠️ Automated Setup (Recommended)
+Choose your operating system below for the easiest start.
 
-# Create/Activate venv
+#### 🐧 Linux (Ubuntu/Debian)
+```bash
+# 1. Give permission
+chmod +x setup.sh
+
+# 2. Run setup
+./setup.sh
+```
+
+#### 🍎 macOS
+1.  Double-click `setup_mac.command`.
+2.  **Note**: If it says "permission denied" or "can't be opened":
+    -   Right-click the file -> Open -> Open.
+    -   _Or run checks in terminal:_ `chmod +x setup_mac.command` then run it.
+
+#### 🪟 Windows
+1.  Double-click `setup.bat` in the folder.
+2.  **OR** run via Command Prompt:
+    ```cmd
+    setup.bat
+    ```
+
+---
+
+### 2. Manual Setup (Advanced)
+Only do this if the automated scripts fail.
+
+**Linux/macOS**
+```bash
 python3 -m venv venv
 source venv/bin/activate
-
-# Install requirements (including gspread)
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 2. Google Sheets Setup
+**Windows**
+```cmd
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+playwright install chromium
+```
+
+### 3. Google Sheets Setup
 1.  **Get Credentials**: Obtain a `credentials.json` file for a Google Service Account (from Google Cloud Console).
 2.  **Place File**: Save `credentials.json` in the **root** of this project folder.
 3.  **Share Sheet**:
@@ -58,9 +90,17 @@ restaurants in london
 ```
 
 ### 2. Run the Scraper
-Run the new proper script:
+### 2. Run the Scraper
+Always make sure your virtual environment is active (or call the python binary directly).
+
+**Linux/macOS**
 ```bash
 ./venv/bin/python3 leads_scrapping.py
+```
+
+**Windows**
+```cmd
+venv\Scripts\python leads_scrapping.py
 ```
 
 ### 3. Check Results
