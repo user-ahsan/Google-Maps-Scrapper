@@ -225,8 +225,8 @@ def scrape_data(page, search_for, total):
 
     previously_counted = 0
     retry_count = 0
-    MAX_RETRIES = 5
-
+    MAX_RETRIES = 10  # Increased for better loading coverage
+    
     # Scroll and load loop
     # Optimization: Target the specific feed div for scrolling
     feed_selector = 'div[role="feed"]'
@@ -235,7 +235,7 @@ def scrape_data(page, search_for, total):
         # Check if feed exists, if not, try hovering generic list
         if page.locator(feed_selector).count() > 0:
             # Scroll the feed directly
-            page.locator(feed_selector).evaluate("node => node.scrollTop += 5000")
+            page.locator(feed_selector).evaluate("node => node.scrollTop += 10000") # More aggressive scroll
         else:
             # Scroll and load loop
             page.mouse.wheel(0, 10000)
@@ -261,7 +261,7 @@ def scrape_data(page, search_for, total):
                 ).all()
                 print(f"\nArrived at all available or stalled.\nTotal Found: {len(listings)}")
                 break
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(4000) # Increased wait time
         else:
             previously_counted = current_count
             retry_count = 0
@@ -292,10 +292,18 @@ def scrape_data(page, search_for, total):
             listing.click()
             page.wait_for_timeout(2000)
             
+            # --- SCOPED SCRAPING ---
+            # Define the Details Pane to avoid reading from the Results List
+            # The details pane typically has 'role="main"'
+            details_pane = page.locator('div[role="main"]')
+            if details_pane.count() == 0:
+                # Fallback if role=main isn't found (rare but possible in updates)
+                details_pane = page
+            
             # Name and Anchor H1
             name_attribute = 'h1.DUwDvf' 
             try:
-                 page.wait_for_selector(name_attribute, timeout=3000)
+                 details_pane.locator(name_attribute).first.wait_for(timeout=3000)
             except Exception:
                  print(f"   -> Warning: H1 element (business name) not found after clicking listing {processed_count}. Skipping detailed scrape for this item.")
                  continue # Skip to next listing if H1 is not found
@@ -308,17 +316,18 @@ def scrape_data(page, search_for, total):
 
             def get_text_safe(locator_xpath, timeout=3000):
                 try:
-                    loc = page.locator(locator_xpath).first
+                    # Scope to details_pane
+                    loc = details_pane.locator(locator_xpath).first
                     return loc.inner_text(timeout=timeout).strip()
                 except Exception:
                     return ""
 
             # Name
             try:
-                if page.locator(name_attribute).count() > 0:
-                    business.name = page.locator(name_attribute).first.inner_text(timeout=5000).strip()
-                elif page.locator('h1').count() > 0:
-                     all_h1s = page.locator('h1').all()
+                if details_pane.locator(name_attribute).count() > 0:
+                    business.name = details_pane.locator(name_attribute).first.inner_text(timeout=5000).strip()
+                elif details_pane.locator('h1').count() > 0:
+                     all_h1s = details_pane.locator('h1').all()
                      business.name = ""
                      for h1 in all_h1s:
                          try:
@@ -350,63 +359,76 @@ def scrape_data(page, search_for, total):
                 
             # Reviews Count & Average
             try:
-                # Reliability Strategy: Use the Business Name H1 as an anchor.
-                h1_xpath = '//h1[contains(@class, "DUwDvf")]'
+                business.reviews_average = None
+                business.reviews_count = None
                 
-                # XPath to find the first rating/review span occurring after the H1
-                rating_xpath = f'{h1_xpath}/following::span[contains(@class, "MW4etd")][1]'
-                review_count_xpath = f'{h1_xpath}/following::span[contains(@class, "UY7F9")][1]'
-
-                # 1. Rating
-                if page.locator(rating_xpath).count() > 0:
-                    rating_text = page.locator(rating_xpath).first.inner_text(timeout=3000).replace(',', '.')
-                    business.reviews_average = float(rating_text)
-                else:
-                    business.reviews_average = None
-
-                # 2. Review Count
-                if page.locator(review_count_xpath).count() > 0:
-                    count_text = page.locator(review_count_xpath).first.inner_text(timeout=3000)
-                    # Text is usually like "(1,234)" or "1,234"
-                    clean_count = count_text.replace('(', '').replace(')', '').replace(',', '').strip()
-                    if clean_count:
-                         business.reviews_count = int(clean_count)
-                    else:
-                         business.reviews_count = None
-                else:
-                    business.reviews_count = None
-
-                # 3. Fallback: Aria-Label on container relative to H1? 
-                # Or just generic fallback if primary failed
-                if business.reviews_average is None or business.reviews_count is None:
-                    # Try finding the aria-label on the stars container which is usually the parent of rating span
-                    # We can use the already found rating element to find its parent
-                    if business.reviews_average:
-                         # Use JS to get parent's aria-label
-                         aria_label = page.locator(rating_xpath).first.locator('xpath=..').get_attribute('aria-label')
-                         if aria_label and "Reviews" in aria_label:
-                              # Parse count from "4.0 stars 982 Reviews"
-                              import re
-                              count_match = re.search(r'([\d,]+) Reviews', aria_label, re.IGNORECASE)
-                              if count_match and business.reviews_count is None:
-                                   business.reviews_count = int(count_match.group(1).replace(',', ''))
+                # Method 1: User Provided Specific Selectors (Primary)
+                try:
+                    # Rating Selector (XPath provided by user)
+                    rating_xpath = '//*[@id="QA0Szd"]/div/div/div[1]/div[3]/div/div[1]/div/div/div[2]/div[2]/div/div[1]/div[2]/div/div[1]/div[2]/span[1]/span[1]'
+                    if page.locator(rating_xpath).count() > 0:
+                        rating_text = page.locator(rating_xpath).first.inner_text(timeout=2000).strip()
+                        if rating_text:
+                            business.reviews_average = float(rating_text.replace(',', '.'))
                     
-                    # If total failure, try generic aria lookup (risky but better than 0)
-                    if business.reviews_count is None:
-                         aria_fallback_xpath = '//span[@role="img" and contains(@aria-label, "stars") and contains(@aria-label, "Reviews")]'
-                         if page.locator(aria_fallback_xpath).count() > 0:
-                              # Pick the first one visible? Or one inside main?
-                              # Let's hope the detail pane one is first or prominent
-                              aria_label = page.locator(aria_fallback_xpath).first.get_attribute('aria-label')
-                              if aria_label:
-                                   import re
-                                   rating_match = re.search(r'(\d+(\.\d+)?) stars', aria_label)
-                                   count_match = re.search(r'([\d,]+) Reviews', aria_label, re.IGNORECASE)
-                                   
-                                   if rating_match and business.reviews_average is None:
+                    # Review Count Selector (CSS provided by user)
+                    # #QA0Szd > div > div > div.w6VYqd > div.bJzME.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde > div.TIHn2 > div > div.lMbq3e > div.LBgpqf > div > div.fontBodyMedium.dmRWX > div.F7nice > span:nth-child(2) > span > span
+                    count_selector = '#QA0Szd > div > div > div.w6VYqd > div.bJzME.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde > div.TIHn2 > div > div.lMbq3e > div.LBgpqf > div > div.fontBodyMedium.dmRWX > div.F7nice > span:nth-child(2) > span > span'
+                    if page.locator(count_selector).count() > 0:
+                        count_text = page.locator(count_selector).first.inner_text(timeout=2000).strip()
+                        # Format: "(1,234)" or "1,234"
+                        clean_count = count_text.replace('(', '').replace(')', '').replace(',', '')
+                        if clean_count.isdigit():
+                            business.reviews_count = int(clean_count)
+                except Exception as e:
+                    # print(f"   -> Method 1 (User selectors) failed: {e}")
+                    pass
+
+                # Method 2: Clickable Reviews Button (High reliability for Count)
+                # Usually there's a button like "1,536 reviews"
+                if business.reviews_count is None:
+                    try:
+                        reviews_btn_xpath = '//button[contains(@aria-label, "Reviews") or contains(@aria-label, "reviews")]'
+                        if details_pane.locator(reviews_btn_xpath).count() > 0:
+                            btn_label = details_pane.locator(reviews_btn_xpath).first.get_attribute('aria-label')
+                            import re
+                            # precise match for count
+                            count_match = re.search(r'([\d,]+)\s+reviews', btn_label, re.IGNORECASE)
+                            if count_match:
+                                 business.reviews_count = int(count_match.group(1).replace(',', ''))
+                    except:
+                        pass
+
+                # Method 3: Robust Aria Label Container (Fallback)
+                if business.reviews_average is None or business.reviews_count is None:
+                    # Relaxed selector: just look for "stars" in label
+                    # CRITICAL FIX: Scoped to details_pane to avoid finding stars in the Search Results list
+                    aria_selector = 'span[role="img"][aria-label*="stars"]'
+                    try:
+                        if details_pane.locator(aria_selector).count() > 0:
+                            # Try to find the one associated with the main pane (often larger or first visible)
+                            # We iterate slightly to find a "good" one if the first one fails
+                            for i in range(min(3, details_pane.locator(aria_selector).count())):
+                                aria_label = details_pane.locator(aria_selector).nth(i).get_attribute('aria-label')
+                                if not aria_label: continue
+                                
+                                import re
+                                # Extract Rating
+                                if business.reviews_average is None:
+                                    rating_match = re.search(r'(\d+(\.\d+)?) stars', aria_label)
+                                    if rating_match:
                                         business.reviews_average = float(rating_match.group(1))
-                                   if count_match and business.reviews_count is None:
+                                
+                                # Extract Count
+                                if business.reviews_count is None:
+                                    count_match = re.search(r'([\d,]+)\s+Review', aria_label, re.IGNORECASE)
+                                    if count_match:
                                         business.reviews_count = int(count_match.group(1).replace(',', ''))
+                                
+                                if business.reviews_average and business.reviews_count:
+                                    break
+                    except: 
+                        pass
 
             except Exception as e:
                 print(f"   -> Warning: Could not extract reviews: {e}")
@@ -494,7 +516,7 @@ def main():
 
     # 3. Start Playwright
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=False)
         page = browser.new_page(locale="en-GB")
         
         page.goto("https://www.google.com/maps", timeout=20000)
