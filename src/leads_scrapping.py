@@ -43,12 +43,13 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
     # --- LIST COLLECTING LOOP ---
     print(f"   📜 Scrolling to load listings...")
     while True:
-        # Check for "End of list"
-        end_indicator = page.locator('//span[contains(text(), "You\'ve reached the end of the list")]')
-        if end_indicator.count() > 0:
-            print(f"   ✅ Reached end of list.")
-            break
+        # Check for "End of list" - Robust Checks
+        # 1. Text based check (broad)
+        if page.locator('//*[contains(text(), "reached the end of the list")]').count() > 0:
+             print(f"   ✅ Reached end of list.")
+             break
         
+        # 2. Specific Class Marker (Google sometimes uses this)
         if page.locator('span.HlvSq').count() > 0: 
             print(f"   ✅ Reached end of list (Marker).")
             break
