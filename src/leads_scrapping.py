@@ -163,19 +163,44 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
             
             business.phone_number = get_text('//button[contains(@data-item-id, "phone:tel:")]//div[contains(@class, "fontBodyMedium")]')
             
-            # Reviews Logic (Simplified/Robust)
+            # Reviews Logic (Improved)
+            business.reviews_average = None
+            business.reviews_count = None
+            
             try:
+                # Method 1: Robust Aria Label Scan
                 aria_selector = 'span[role="img"][aria-label*="stars"]'
-                if details_pane.locator(aria_selector).count() > 0:
-                    lbl = details_pane.locator(aria_selector).first.get_attribute('aria-label')
+                
+                # Scan top 5 matches to find the one that likely belongs to the main header
+                count_candidates = details_pane.locator(aria_selector).count()
+                for i in range(min(5, count_candidates)):
+                    lbl = details_pane.locator(aria_selector).nth(i).get_attribute('aria-label')
+                    if not lbl: continue
+                    
                     import re
-                    # "4.8 stars 153 Reviews"
+                    # Example: "4.8 stars 153 Reviews"
                     rating_match = re.search(r'(\d+(\.\d+)?) stars', lbl)
                     count_match = re.search(r'([\d,]+)\s+Review', lbl, re.IGNORECASE)
                     
-                    if rating_match: business.reviews_average = float(rating_match.group(1))
-                    if count_match: business.reviews_count = int(count_match.group(1).replace(',', ''))
-            except: pass
+                    if rating_match and count_match:
+                         business.reviews_average = float(rating_match.group(1))
+                         business.reviews_count = int(count_match.group(1).replace(',', ''))
+                         break # Found a perfect match containing both
+                    
+                    # Capture partial if we haven't found better
+                    if rating_match and not business.reviews_average:
+                         business.reviews_average = float(rating_match.group(1))
+
+                # Method 2: Button Text Fallback (Specific for Count)
+                if not business.reviews_count:
+                    btn_xpath = '//button[contains(@aria-label, "Reviews")]'
+                    if details_pane.locator(btn_xpath).count() > 0:
+                        lbl = details_pane.locator(btn_xpath).first.get_attribute('aria-label')
+                        count_match = re.search(r'([\d,]+)\s+Review', lbl, re.IGNORECASE)
+                        if count_match:
+                            business.reviews_count = int(count_match.group(1).replace(',', ''))
+            except Exception: 
+                pass
 
             business.category = search_for.split(' in ')[0].strip()
             business.location = search_for.split(' in ')[-1].strip()
@@ -195,7 +220,9 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
             # --- BEAUTIFUL LOGGING ---
             if is_new:
                 business_list.add_business(business)
-                print(f"      ✅  {business.name:<40} | 📞 {business.phone_number:<15} | ⭐ {business.reviews_average}")
+                # Helper to format count safely
+                r_count = f"({business.reviews_count})" if business.reviews_count else ""
+                print(f"      ✅  {business.name:<40} | 📞 {business.phone_number:<15} | ⭐ {business.reviews_average} {r_count}")
             else:
                  print(f"      ❌  {business.name:<40} | [DUPLICATE]")
             
