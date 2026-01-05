@@ -6,8 +6,8 @@ import sys
 
 # Import Refactored Modules
 try:
-    import sheets_utils
-    import leads_scrapping
+    from src import sheets_utils
+    from src import leads_scrapping
 except ImportError as e:
     print(f"CRITICAL ERROR: Could not import modules: {e}")
     sys.exit(1)

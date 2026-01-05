@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright
 
 # Import data models and helpers from sheets_utils
 try:
-    from sheets_utils import Business, BusinessList, extract_coordinates_from_url, generate_unique_key
+    from .sheets_utils import Business, BusinessList, extract_coordinates_from_url, generate_unique_key
 except ImportError:
     import sys
     print("Error: Could not import from sheets_utils.py. Make sure it is in the same directory.")
