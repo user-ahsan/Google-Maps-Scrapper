@@ -5,6 +5,13 @@ import pandas as pd
 import argparse
 import os
 import sys
+import glob
+
+# Try to import sheets_utils
+try:
+    import sheets_utils
+except ImportError:
+    sheets_utils = None
 
 @dataclass
 class Business:
@@ -48,8 +55,10 @@ class BusinessList:
     """
     business_list: list[Business] = field(default_factory=list)
     _seen_businesses: set = field(default_factory=set, init=False)
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
-    save_at = os.path.join('GMaps Data', today)
+    business_list: list[Business] = field(default_factory=list)
+    _seen_businesses: set = field(default_factory=set, init=False)
+    # today = datetime.datetime.now().strftime("%Y-%m-%d") <-- REMOVED DATE DIR
+    save_at = 'GMaps Data'
     # os.makedirs(save_at, exist_ok=True)  <-- REMOVED: Prevent auto-creation
 
     def add_business(self, business: Business):
@@ -77,20 +86,150 @@ class BusinessList:
         os.makedirs(self.save_at, exist_ok=True)
         self.dataframe().to_excel(f"{self.save_at}/{filename}.xlsx", index=False)
 
-    def save_to_csv(self, filename):
-        """saves pandas dataframe to csv file
-
-        Args:
-            filename (str): filename
+    def save_to_csv(self, filename) -> str:
+        """saves pandas dataframe to csv file. Returns path.
+        Appends to existing file if present.
         """
         os.makedirs(self.save_at, exist_ok=True)
-        self.dataframe().to_csv(f"{self.save_at}/{filename}.csv", index=False)
+        # FORCE filename to 'Gmaps Leads' regardless of input to enforce single file
+        # We assume the caller sends a descriptive name, but we want one BIG file.
+        # User requirement: "single csv file in the directory named the same as google sheet file which is Gmaps Data"
+        # I suspect they want "GMaps Data/Gmaps Leads.csv"
+        
+        target_file = "Gmaps Leads"
+        path = f"{self.save_at}/{target_file}.csv"
+        
+        df = self.dataframe()
+        
+        # Enforce Schema here too for local consistency
+        if sheets_utils:
+            expected = sheets_utils.EXPECTED_HEADERS
+            # Rename columns to match expected headers using default mapping logic
+            # This is duplicate logic but safe
+            rename_map = {
+                "name": "Name", "address": "Address", "domain": "Domain", "website": "Website",
+                "phone_number": "Phone Number", "category": "Category", "location": "Location",
+                "reviews_count": "Reviews Count", "reviews_average": "Reviews Average",
+                "latitude": "Latitude", "longitude": "Longitude", "google_maps_link": "Google Maps Link",
+                "Scraped_Query": "Scraped Query", "Scraped_At": "Scraped At"
+            }
+            df = df.rename(columns=rename_map)
+            
+            # Ensure columns exist
+            for h in expected:
+                if h not in df.columns: df[h] = ""
+            
+            # Filter
+            df = df[expected]
+        
+        header = not os.path.exists(path)
+        df.to_csv(path, index=False, mode='a', header=header)
+        return path
 
 def extract_coordinates_from_url(url: str) -> tuple[float, float]:
     """helper function to extract coordinates from url"""
-    coordinates = url.split('/@')[-1].split('/')[0]
-    # return latitude, longitude
-    return float(coordinates.split(',')[0]), float(coordinates.split(',')[1])
+    try:
+        coordinates = url.split('/@')[-1].split('/')[0]
+        return float(coordinates.split(',')[0]), float(coordinates.split(',')[1])
+    except:
+        return 0.0, 0.0
+
+# --- DIAGNOSTICS & SYNC ---
+
+def run_diagnostics():
+    """Run startup checks for Browser and Sheets."""
+    print("\n" + "="*50)
+    print("   🔍 STARTUP DIAGNOSTICS")
+    print("="*50)
+
+    # 1. Browser Connectivity Test
+    print("1. Testing Browser Environment (Headless)...", end=" ")
+    browser_ready = False
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto("https://www.google.com", timeout=10000)
+            browser.close()
+        print("✅ PASS")
+        browser_ready = True
+    except Exception as e:
+        print(f"❌ FAIL\n   Error: {e}")
+        print("   -> Tip: Ensure Playwright is installed: 'playwright install chromium'")
+
+    # 2. Google Sheets Connectivity Test
+    print("2. Testing Google Sheets Connection...", end=" ")
+    sheets_client = None
+    online_mode = False
+    
+    if sheets_utils:
+        sheets_client = sheets_utils.connect_to_sheets()
+        if sheets_client:
+            print("✅ PASS")
+            online_mode = True
+        else:
+            print("⚠️ CHECK FAILED")
+            print("   -> Could not connect to Google Sheets. Will run in OFFLINE mode.")
+    else:
+        print("❌ FAIL (sheets_utils missing)")
+
+    print("-" * 50)
+    return browser_ready, sheets_client, online_mode
+
+def sync_offline_data(sheets_client):
+    """Check for existing CSVs and upload them if possible."""
+    print("\n☁️ Checking for offline data to sync...")
+    
+    base_dir = 'GMaps Data'
+    if not os.path.exists(base_dir):
+        print("   No data directory found. Nothing to sync.")
+        return
+
+    # User wants ROBUST SINGLE FILE handling.
+    # We should look for 'Gmaps Leads.csv' primarily.
+    target_csv = os.path.join(base_dir, 'Gmaps Leads.csv')
+    csv_files = []
+    
+    if os.path.exists(target_csv):
+        csv_files.append(target_csv)
+    
+    # Also check legacy files just in case? 
+    # User said: "should jsut ahave a single csv file"
+    # But for "syncing offline data", we should likely ingest old files if they exist to be helpful?
+    # No, strict instructions: "Robust data enrichment... syncing happens... robust file handling"
+    # Let's stick to the MAIN file for now to avoid complexity with old schemas.
+    
+    if not csv_files:
+        print("   No 'Gmaps Leads.csv' found.")
+        return
+
+    print(f"   Found {len(csv_files)} CSV file(s). Syncing...")
+    
+    worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
+    if not worksheet:
+        print("   Could not access worksheet for sync.")
+        return
+
+    synced_count = 0
+    for csv_path in csv_files:
+        try:
+            df = pd.read_csv(csv_path)
+            if df.empty:
+                continue
+            
+            # If large file, this might be heavy. 'upload_data_to_sheet' handles dupes.
+            print(f"   Syncing {os.path.basename(csv_path)}...", end=" ")
+            added, dupe = sheets_utils.upload_data_to_sheet(worksheet, df)
+            print(f"Done. (+{added}, {dupe} dupes)")
+            synced_count += 1
+            
+        except Exception as e:
+            print(f"   Error syncing {csv_path}: {e}")
+
+    if synced_count > 0:
+        print(f"✅ Synced {synced_count} files to Google Sheets.")
+    else:
+        print("   Sync complete.")
 
 
 def main():
@@ -99,7 +238,36 @@ def main():
     parser.add_argument("-s", "--search", type=str)
     parser.add_argument("-t", "--total", type=int)
     parser.add_argument("-headed", "--headed", action="store_true", help="Run with browser visible")
+    parser.add_argument("-y", "--yes", action="store_true", help="Auto-accept prompts")
     args = parser.parse_args()
+
+    # 1. Run Diagnostics
+    browser_ok, sheets_client, online_mode = run_diagnostics()
+
+    # --- OPTIMIZATION: Pre-load SEEN URLS ---
+    global_seen_urls = set()
+    if sheets_utils:
+        worksheet = None
+        if online_mode and sheets_client:
+            worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
+        
+        # Load from both Online (if avail) and Offline
+        global_seen_urls = sheets_utils.get_all_seen_urls(worksheet)
+    # ----------------------------------------
+
+    if not browser_ok:
+        if not args.yes:
+             input("\n❌ Browser test failed. Check errors above. Press Enter to try anyway (or Ctrl+C to quit)...")
+    
+    if online_mode:
+        # 2. Sync Offline Data
+        sync_offline_data(sheets_client)
+    else:
+        print("\n⚠️ ORANGE ALERT: Running in OFFLINE MODE. Data will be saved to CSV only.")
+        if not args.yes:
+             resp = input("   Continue? (Y/n): ")
+             if resp.lower() == 'n':
+                 sys.exit()
     
     if args.search:
         search_list = [args.search]
@@ -186,7 +354,14 @@ def main():
 
             # scraping
             for i, listing in enumerate(listings):
-                try:                        
+                try:
+                    # OPTIMIZATION: Check URL before clicking
+                    href = listing.get_attribute('href')
+                    if href:
+                         if href in global_seen_urls:
+                             print(f"   Skipping known item {i+1} (Duplicate URL)...", end='\r')
+                             continue
+                    
                     listing.click()
                     page.wait_for_timeout(2000)
                     
@@ -269,6 +444,8 @@ def main():
                     business.location = search_for.split(' in ')[-1].strip()
                     business.latitude, business.longitude = extract_coordinates_from_url(page.url)
                     business.google_maps_link = page.url
+                    if page.url:
+                         global_seen_urls.add(page.url)
 
                     business_list.add_business(business)
                 except Exception as e:
@@ -276,8 +453,26 @@ def main():
             
             # output
             clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
-            business_list.save_to_excel(clean_filename)
-            business_list.save_to_csv(clean_filename)
+            # business_list.save_to_excel(clean_filename) # Disable individual excel files per query for now
+            
+            # This will append to 'Gmaps Leads.csv'
+            csv_path = business_list.save_to_csv(clean_filename) 
+            print(f"\n   💾 Saved to main DB: {csv_path}")
+
+            # 2. Upload if Online
+            if online_mode and sheets_client:
+                print("   ☁️  Uploading to Sheets...", end=" ")
+                try:
+                        df = business_list.dataframe()
+                        # Add metadata cols expected by sheets_utils
+                        df['Scraped_Query'] = search_for
+                        df['Scraped_At'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
+                        added, dupes = sheets_utils.upload_data_to_sheet(worksheet, df)
+                        print(f"Done. (+{added}, {dupes} Dupes)")
+                except Exception as e:
+                    print(f"Failed: {e}")
 
         browser.close()
 
