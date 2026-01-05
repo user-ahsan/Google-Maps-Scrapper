@@ -1,11 +1,77 @@
-gyms in township ,Lahore
-fitness club in township ,Lahore
-woman gyms in township ,Lahore
-men gyms in township ,Lahore
-children gyms in township ,Lahore
-senior citizen gyms in township ,Lahore
-department stores in township ,Lahore
-shopping malls in township ,Lahore
-cafes in township ,Lahore
-restaurents in township ,Lahore
-hospitals in township ,Lahore
+gyms in township, Lahore
+fitness club in gulberg, Lahore
+women gyms in model town, Lahore
+men gyms in johar town, Lahore
+children gyms in dha, Lahore
+senior citizen gyms in cantt, Lahore
+department stores in gulshan e iqbal, Karachi
+shopping malls in clifton, Karachi
+cafes in saddar, Karachi
+restaurants in north nazimabad, Karachi
+hospitals in bahadurabad, Karachi
+gyms in f-10, Islamabad
+fitness club in g-11, Islamabad
+women gyms in i-8, Islamabad
+men gyms in blue area, Islamabad
+children gyms in bahria town, Islamabad
+senior citizen gyms in dha, Islamabad
+department stores in saddar, Rawalpindi
+shopping malls in peshawar cantt, Peshawar
+cafes in university road, Peshawar
+restaurants in hayatabad, Peshawar
+hospitals in dabgari gardens, Peshawar
+gyms in pechs, Karachi
+fitness club in gulistan e johar, Karachi
+women gyms in dha phase 6, Karachi
+men gyms in korangi, Karachi
+children gyms in north karachi, Karachi
+senior citizen gyms in fb area, Karachi
+department stores in jinnah road, Quetta
+shopping malls in satellite town, Quetta
+cafes in cantonment, Quetta
+restaurants in zarghoon road, Quetta
+hospitals in sariab road, Quetta
+gyms in cantt, Multan
+fitness club in gulgasht, Multan
+women gyms in shah rukn e alam, Multan
+men gyms in mumtazabad, Multan
+children gyms in bosan road, Multan
+senior citizen gyms in new multan, Multan
+department stores in d ground, Faisalabad
+shopping malls in peoples colony, Faisalabad
+cafes in civil lines, Faisalabad
+restaurants in satiana road, Faisalabad
+hospitals in madina town, Faisalabad
+gyms in cantt, Sialkot
+fitness club in paris road, Sialkot
+women gyms in defence road, Sialkot
+men gyms in rangpura, Sialkot
+children gyms in model town, Sialkot
+senior citizen gyms in ugoki road, Sialkot
+department stores in cantt, Gujranwala
+shopping malls in satellite town, Gujranwala
+cafes in gt road, Gujranwala
+restaurants in peoples colony, Gujranwala
+hospitals in civil lines, Gujranwala
+gyms in cantt, Hyderabad
+fitness club in latifabad, Hyderabad
+women gyms in qasimabad, Hyderabad
+men gyms in saddar, Hyderabad
+children gyms in autobahn road, Hyderabad
+senior citizen gyms in unit no 7, Hyderabad
+department stores in saddar, Sukkur
+shopping malls in military road, Sukkur
+cafes in clock tower, Sukkur
+restaurants in new pindi, Sukkur
+hospitals in barrage road, Sukkur
+gyms in cantt, Abbottabad
+fitness club in mandian, Abbottabad
+women gyms in supply bazar, Abbottabad
+men gyms in nawanshehr, Abbottabad
+children gyms in jhangi syedan, Abbottabad
+senior citizen gyms in malikpura, Abbottabad
+department stores in cantt, Bahawalpur
+shopping malls in model town a, Bahawalpur
+cafes in farid gate, Bahawalpur
+restaurants in satellite town, Bahawalpur
+hospitals in civil hospital road, Bahawalpur
