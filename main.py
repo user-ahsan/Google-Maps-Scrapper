@@ -469,14 +469,14 @@ def main():
 
             # 2. Upload if Online
             if online_mode and sheets_client:
-                print("   ☁️  Uploading to Sheets...", end=" ")
+                # sheets_utils now handles detailed logging
                 try:
                         df = business_list.dataframe()
                         # Metadata already in DF from Business objects
                         
                         worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
                         added, dupes = sheets_utils.upload_data_to_sheet(worksheet, df)
-                        print(f"Done. (+{added}, {dupes} Dupes)")
+                        # Optional: Print simple confirmation if needed, but utils logs writing
                 except Exception as e:
                     print(f"Failed: {e}")
 

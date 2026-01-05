@@ -31,7 +31,7 @@ def connect_to_sheets():
     client = gspread.authorize(creds)
     return client
 
-def get_or_create_worksheet(sheet, title="Sheet1"):
+def get_or_create_worksheet(sheet, title="Data 1"):
     """Gets a worksheet by title, or creates it if it doesn't exist."""
     try:
         worksheet = sheet.worksheet(title)
@@ -498,7 +498,8 @@ def main():
         print("🔌 Connecting to Google Sheets...")
         client = connect_to_sheets()
         spreadsheet = client.open(SHEET_NAME)
-        worksheet = spreadsheet.sheet1 # Assuming first sheet
+        # Use helper to get/create "Data 1"
+        worksheet = get_or_create_worksheet(spreadsheet, "Data 1")
         
         # Enhanced Logging
         print("-" * 60)

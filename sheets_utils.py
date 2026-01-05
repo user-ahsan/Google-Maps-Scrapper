@@ -35,6 +35,25 @@ DEFAULT_MAPPING = {
     "scraped_at": "Scraped At"
 }
 
+def print_sheet_status(action, sheet_name="N/A", sheet_id="N/A", details=""):
+    """Helper to print beautiful, standardized sheet logs."""
+    # ANSI escape codes for colors (if terminal supports them, else just text)
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    
+    # Clean up ID if it's an object
+    if hasattr(sheet_id, 'id'): sheet_id = sheet_id.id
+    
+    sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+    
+    print(f"{CYAN}   [SHEETS] {BOLD}{action:<10}{RESET} | 📄 {sheet_name}")
+    print(f"{CYAN}            🔗 {sheet_url}{RESET}")
+    if details:
+        print(f"{YELLOW}            ↳ {details}{RESET}")
+
 def connect_to_sheets(credentials_file=CREDENTIALS_FILE):
     """Connects to Google Sheets using credentials.json"""
     if not os.path.exists(credentials_file):
@@ -50,15 +69,18 @@ def connect_to_sheets(credentials_file=CREDENTIALS_FILE):
         print(f"Error connecting to sheets: {e}")
         return None
 
-def get_or_create_worksheet(client, sheet_name=SHEET_NAME, worksheet_title="Sheet1"):
+def get_or_create_worksheet(client, sheet_name=SHEET_NAME, worksheet_title="Data 1"):
     """Gets a worksheet by title, or creates it if it doesn't exist."""
     try:
         spreadsheet = client.open(sheet_name)
         try:
             worksheet = spreadsheet.worksheet(worksheet_title)
+            print_sheet_status("ACCESS", spreadsheet.title, spreadsheet.id, f"Opened worksheet '{worksheet_title}'")
             return worksheet
         except gspread.WorksheetNotFound:
-            return spreadsheet.add_worksheet(title=worksheet_title, rows=1000, cols=20)
+            ws = spreadsheet.add_worksheet(title=worksheet_title, rows=1000, cols=20)
+            print_sheet_status("CREATE", spreadsheet.title, spreadsheet.id, f"Created new worksheet '{worksheet_title}'")
+            return ws
     except Exception as e:
         print(f"Error opening sheet: {e}")
         return None
@@ -182,7 +204,7 @@ def upload_data_to_sheet(worksheet, df_new):
     """
     
     # 1. Fetch Existing Keys
-    print("   Checking for duplicates...")
+    print_sheet_status("CHECKING", worksheet.spreadsheet.title, worksheet.spreadsheet.id, "Reading existing data for deduplication...")
     existing_keys = get_existing_keys(worksheet)
     
     # 2. Map Columns (standardize to sheet)
@@ -199,6 +221,7 @@ def upload_data_to_sheet(worksheet, df_new):
             existing_keys.add(key) # Add to local set to prevent dupes within same batch
     
     if not new_rows:
+        print_sheet_status("SKIPPED", worksheet.spreadsheet.title, worksheet.spreadsheet.id, "All records already exist.")
         return 0, initial_count
     
     # 4. Prepare for Upload
@@ -218,7 +241,7 @@ def upload_data_to_sheet(worksheet, df_new):
         next_row = len(col_a_values) + 1
         range_name = f"A{next_row}"
         
-        print(f"   Writing data starting at cell {range_name}...")
+        print_sheet_status("WRITING", worksheet.spreadsheet.title, worksheet.spreadsheet.id, f"Appending {len(new_rows)} rows starting at {range_name}")
         worksheet.update(range_name=range_name, values=data_to_upload, value_input_option='USER_ENTERED')
         return len(new_rows), initial_count - len(new_rows)
     except Exception as ex:
@@ -239,7 +262,7 @@ def get_all_seen_urls(worksheet=None, local_dir='GMaps Data'):
     # 1. From Sheets
     if worksheet:
         try:
-            print("   Fetching existing URLs from Google Sheets...", end=" ")
+            print_sheet_status("READING", worksheet.spreadsheet.title, worksheet.spreadsheet.id, "Fetching known URLs for optimization...")
             # Find the 'Google Maps Link' column index
             # We assume header is in row 1
             headers = worksheet.row_values(1)
