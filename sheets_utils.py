@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import datetime
 import glob
+from dataclasses import dataclass, asdict, field
 
 # --- Configuration ---
 SHEET_NAME = "Gmaps Leads"  # The Google Sheet to save results to
@@ -34,6 +35,107 @@ DEFAULT_MAPPING = {
     "scraped_query": "Scraped Query",
     "scraped_at": "Scraped At"
 }
+
+@dataclass
+class Business:
+    """holds business data"""
+    name: str = None
+    address: str = None
+    domain: str = None
+    website: str = None
+    phone_number: str = None
+    category: str = None
+    location: str = None
+    reviews_count: int = None
+    reviews_average: float = None
+    latitude: float = None
+    longitude: float = None
+    google_maps_link: str = None
+    scraped_query: str = None
+    scraped_at: str = None
+    
+    def __hash__(self):
+        """Make Business hashable for duplicate detection.
+        Consider businesses different if:
+        - Name is different, OR
+        - Same name but different non-empty contact info (domain/website/phone)
+        """
+        # Create a tuple of fields that must match for duplicates
+        # We'll include name plus any non-empty contact info fields
+        hash_fields = [self.name]
+        # Only include contact info fields if they're not empty
+        if self.domain:
+            hash_fields.append(f"domain:{self.domain}")
+        if self.website:
+            hash_fields.append(f"website:{self.website}")
+        if self.phone_number:
+            hash_fields.append(f"phone:{self.phone_number}")
+        
+        return hash(tuple(hash_fields))
+
+@dataclass
+class BusinessList:
+    """holds list of Business objects,
+    and save to both excel and csv
+    """
+    business_list: list[Business] = field(default_factory=list)
+    _seen_businesses: set = field(default_factory=set, init=False)
+    save_at = 'GMaps Data'
+
+    def add_business(self, business: Business):
+        """Add a business to the list if it's not a duplicate based on key attributes"""
+        business_hash = hash(business)
+        if business_hash not in self._seen_businesses:
+            self.business_list.append(business)
+            self._seen_businesses.add(business_hash)
+    
+    def dataframe(self):
+        """transform business_list to pandas dataframe
+
+        Returns: pandas dataframe
+        """
+        return pd.json_normalize(
+            (asdict(business) for business in self.business_list), sep="_"
+        )
+
+    def save_to_csv(self, filename) -> str:
+        """saves pandas dataframe to csv file. Returns path.
+        Appends to existing file if present.
+        """
+        os.makedirs(self.save_at, exist_ok=True)
+        # FORCE filename to 'Gmaps Leads' regardless of input to enforce single file
+        target_file = "Gmaps Leads"
+        path = f"{self.save_at}/{target_file}.csv"
+        
+        df = self.dataframe()
+        
+        # Enforce Schema here too for local consistency
+        if EXPECTED_HEADERS:
+            # Rename columns to match expected headers using default mapping logic
+            rename_map = {}
+            for internal, display in DEFAULT_MAPPING.items():
+                rename_map[internal] = display
+                
+            df = df.rename(columns=rename_map)
+            
+            # Ensure columns exist
+            for h in EXPECTED_HEADERS:
+                if h not in df.columns: df[h] = ""
+            
+            # Filter
+            df = df[EXPECTED_HEADERS]
+        
+        header = not os.path.exists(path)
+        df.to_csv(path, index=False, mode='a', header=header)
+        return path
+
+def extract_coordinates_from_url(url: str) -> tuple[float, float]:
+    """helper function to extract coordinates from url"""
+    try:
+        coordinates = url.split('/@')[-1].split('/')[0]
+        return float(coordinates.split(',')[0]), float(coordinates.split(',')[1])
+    except:
+        return 0.0, 0.0
 
 def print_sheet_status(action, sheet_name="N/A", sheet_id="N/A", details=""):
     """Helper to print beautiful, standardized sheet logs."""
@@ -195,8 +297,6 @@ def map_columns_to_sheet(df, worksheet):
     
     return final_df
 
-    return final_df
-
 def upload_data_to_sheet(worksheet, df_new):
     """
     Handles the deduplication and upload of data provided in df_new.
@@ -320,3 +420,58 @@ def get_all_seen_urls(worksheet=None, local_dir='GMaps Data'):
         print(f"Done. Total unique (Online + Offline): {len(seen_urls)}")
     
     return seen_urls
+
+def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
+    """
+    Returns a set of all known Business Names (normalized to lowercase) 
+    from both online sheet and local CSVs.
+    Used for fast pre-click deduplication.
+    """
+    known_names = set()
+    
+    # 1. From Sheets
+    if worksheet:
+        try:
+            print_sheet_status("READING", worksheet.spreadsheet.title, worksheet.spreadsheet.id, "Fetching known Names for pre-filtering...")
+            headers = worksheet.row_values(1)
+            name_col_idx = -1
+            
+            candidates = ['Name', 'name', 'Business Name']
+            for i, h in enumerate(headers):
+                if h in candidates:
+                    name_col_idx = i + 1
+                    break
+            
+            if name_col_idx != -1:
+                names = worksheet.col_values(name_col_idx)
+                if names and names[0] in candidates:
+                    names = names[1:] # Skip header
+                
+                for n in names:
+                    if n and isinstance(n, str) and n.strip():
+                        known_names.add(n.strip().lower())
+        except Exception as e:
+            print(f"Error reading names from sheet: {e}")
+
+    # 2. From Local CSVs
+    if os.path.exists(local_dir):
+        # We don't print here to avoid spamming logs, assuming get_all_seen_urls or similar ran before
+        csv_files = glob.glob(os.path.join(local_dir, '**', '*.csv'), recursive=True)
+        
+        for csv_path in csv_files:
+            try:
+                df = pd.read_csv(csv_path)
+                target_col = None
+                for col in df.columns:
+                    if col in ['Name', 'name']:
+                        target_col = col
+                        break
+                
+                if target_col:
+                    for n in df[target_col].dropna():
+                        if isinstance(n, str) and n.strip():
+                            known_names.add(n.strip().lower())
+            except Exception:
+                pass
+                
+    return known_names
