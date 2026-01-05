@@ -38,7 +38,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
     previously_counted = 0
     feed_selector = 'div[role="feed"]'
     no_change_counter = 0
-    MAX_NO_CHANGE = 20 
+    MAX_NO_CHANGE = 90 # ~180 seconds (90 * 2s) 
     
     # --- LIST COLLECTING LOOP ---
     print(f"   📜 Scrolling to load listings...")
@@ -125,18 +125,46 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
             listing.click()
             page.wait_for_timeout(1500) # Short wait for panel
             
-            details_pane = page.locator('div[role="main"]')
-            if details_pane.count() == 0: details_pane = page
-
-            # Validation: Wait for H1
+            # --- SCOPED SCRAPING: SMART CONTEXT ---
+            # Instead of looking for a generic role, we look for the H1 (Business Name) 
+            # and then scope to its parent container to ensure we rely on the specific open panel.
+            
+            # 1. Wait for H1 (Validation of Load)
             name_attribute = 'h1.DUwDvf' 
             try:
-                 details_pane.locator(name_attribute).first.wait_for(timeout=3000)
+                 # Wait globally first to ensure it's there
+                 page.wait_for_selector(name_attribute, timeout=3000)
             except:
                  # Try fallback H1
-                 if details_pane.locator('h1').count() == 0:
+                 try:
+                     page.locator('h1').first.wait_for(timeout=2000)
+                 except:
                      print(f"      ⚠️  Skip: No details load for #{i+1}")
                      continue
+
+            # 2. Define Scope (Crucial for correct Extraction)
+            # We assume the H1 is inside the Details Pane. 
+            # We'll use the specific H1 we found to anchor our search.
+            
+            details_pane = page # Default fallback
+            
+            # Try to find the specific container holding this H1
+            # Usually the details panel is a 'div[role="main"]' or has a specific class like 'm6QErb'
+            if page.locator('div[role="main"]').count() > 0:
+                # Gmaps often has multiple role="main" (e.g. Navigation, Search, Details)
+                # The Details one is usually the last one opened or has specific attributes.
+                # We iterate to find the one containing our target H1 (implicit or explicit check)
+                
+                # Heuristic: The one with the highest z-index or last in DOM is often the overlay.
+                # Let's try the Last one first.
+                details_pane = page.locator('div[role="main"]').last
+            
+            # Verify if H1 is inside this candidate `details_pane`
+            if details_pane.locator(name_attribute).count() == 0 and details_pane.locator('h1').count() == 0:
+                # If not found in the scoped pane, fallback to page (risky but necessary)
+                # But to avoid "Stuck Ratings" (grabbing list view items), we try to get the H1's parent
+                print("      ⚠️  Warning: Scoping issue. H1 not found in main pane. Using Page fallback.")
+                details_pane = page
 
             business = Business()
             business.scraped_query = search_for
