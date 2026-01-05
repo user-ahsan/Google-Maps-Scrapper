@@ -27,7 +27,11 @@ class Business:
     reviews_average: float = None
     latitude: float = None
     longitude: float = None
+    latitude: float = None
+    longitude: float = None
     google_maps_link: str = None
+    scraped_query: str = None
+    scraped_at: str = None
     
     def __hash__(self):
         """Make Business hashable for duplicate detection.
@@ -111,7 +115,7 @@ class BusinessList:
                 "phone_number": "Phone Number", "category": "Category", "location": "Location",
                 "reviews_count": "Reviews Count", "reviews_average": "Reviews Average",
                 "latitude": "Latitude", "longitude": "Longitude", "google_maps_link": "Google Maps Link",
-                "Scraped_Query": "Scraped Query", "Scraped_At": "Scraped At"
+                "scraped_query": "Scraped Query", "scraped_at": "Scraped At"
             }
             df = df.rename(columns=rename_map)
             
@@ -444,6 +448,10 @@ def main():
                     business.location = search_for.split(' in ')[-1].strip()
                     business.latitude, business.longitude = extract_coordinates_from_url(page.url)
                     business.google_maps_link = page.url
+                    # Add Metadata
+                    business.scraped_query = search_for
+                    business.scraped_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                     if page.url:
                          global_seen_urls.add(page.url)
 
@@ -464,9 +472,7 @@ def main():
                 print("   ☁️  Uploading to Sheets...", end=" ")
                 try:
                         df = business_list.dataframe()
-                        # Add metadata cols expected by sheets_utils
-                        df['Scraped_Query'] = search_for
-                        df['Scraped_At'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        # Metadata already in DF from Business objects
                         
                         worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
                         added, dupes = sheets_utils.upload_data_to_sheet(worksheet, df)

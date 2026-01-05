@@ -9,6 +9,32 @@ import glob
 SHEET_NAME = "Gmaps Leads"  # The Google Sheet to save results to
 CREDENTIALS_FILE = "credentials.json"
 
+# Strict Schema Definition
+EXPECTED_HEADERS = [
+    "Name", "Address", "Domain", "Website", "Phone Number", 
+    "Category", "Location", "Reviews Count", "Reviews Average", 
+    "Latitude", "Longitude", "Google Maps Link", 
+    "Scraped Query", "Scraped At"
+]
+
+# Internal logic keys to default display names
+DEFAULT_MAPPING = {
+    "name": "Name",
+    "address": "Address",
+    "domain": "Domain",
+    "website": "Website",
+    "phone_number": "Phone Number",
+    "category": "Category",
+    "location": "Location",
+    "reviews_count": "Reviews Count",
+    "reviews_average": "Reviews Average",
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+    "google_maps_link": "Google Maps Link",
+    "scraped_query": "Scraped Query",
+    "scraped_at": "Scraped At"
+}
+
 def connect_to_sheets(credentials_file=CREDENTIALS_FILE):
     """Connects to Google Sheets using credentials.json"""
     if not os.path.exists(credentials_file):
@@ -108,32 +134,6 @@ def map_columns_to_sheet(df, worksheet):
     If the sheet is empty, sets default headers.
     """
     
-    # Internal logic keys to default display names
-    DEFAULT_MAPPING = {
-        "name": "Name",
-        "address": "Address",
-        "domain": "Domain",
-        "website": "Website",
-        "phone_number": "Phone Number",
-        "category": "Category",
-        "location": "Location",
-        "reviews_count": "Reviews Count",
-        "reviews_average": "Reviews Average",
-        "latitude": "Latitude",
-        "longitude": "Longitude",
-        "google_maps_link": "Google Maps Link",
-        "Scraped_Query": "Scraped Query",
-        "Scraped_At": "Scraped At"
-    }
-
-    # STRICT SCHEMA ENFORCEMENT
-    EXPECTED_HEADERS = [
-        "Name", "Address", "Domain", "Website", "Phone Number", 
-        "Category", "Location", "Reviews Count", "Reviews Average", 
-        "Latitude", "Longitude", "Google Maps Link", 
-        "Scraped Query", "Scraped At"
-    ]
-
     try:
         # Get existing headers from the sheet
         existing_headers = worksheet.row_values(1)
