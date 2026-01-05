@@ -110,6 +110,31 @@ venv\Scripts\python leads_scrapping.py
 
 ---
 
+## 🧪 Verification & Testing
+To ensure everything is working correctly, you can run the following test scripts from the root directory.
+
+### 1. Environment Check
+Checks if Python, required libraries, and config files (`credentials.json`, `input.txt`) are present.
+- **Windows**: `venv\Scripts\python test/test_env.py`
+- **Mac/Linux**: `./venv/bin/python3 test/test_env.py`
+
+### 2. Browser Test
+Launches the browser (headed mode) and visits Google to verify Playwright installation.
+- **Windows**: `venv\Scripts\python test/test_browser.py`
+- **Mac/Linux**: `./venv/bin/python3 test/test_browser.py`
+
+### 3. Sheets Connectivity Test
+Writes a random test key to your Google Sheet (cell Z1), reads it back, and deletes it. Verifies API access.
+- **Windows**: `venv\Scripts\python test/test_sheets.py`
+- **Mac/Linux**: `./venv/bin/python3 test/test_sheets.py`
+
+### 4. Basic Scraper Test
+Runs a real scraper test (without saving to sheets) to check if selectors and scrolling are working on Google Maps.
+- **Windows**: `venv\Scripts\python test/test_scraper_basic.py`
+- **Mac/Linux**: `./venv/bin/python3 test/test_scraper_basic.py`
+
+---
+
 ## ⚙️ Configuration
 You can tweak settings in `leads_scrapping.py`:
 - `SHEET_NAME`: Name of your Google Sheet (Default: "Gmaps Leads").
