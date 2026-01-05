@@ -1,6 +1,6 @@
-import time
 import datetime
 from playwright.sync_api import sync_playwright
+import msvcrt # For interactive commands (Windows)
 
 # Import data models and helpers from sheets_utils
 try:
@@ -70,8 +70,15 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
         if current_count == previously_counted:
             no_change_counter += 1
             if no_change_counter >= 5:
-                 print(f"      ...waiting ({no_change_counter}/{MAX_NO_CHANGE})", end='\r')
+                 print(f"      ...waiting ({no_change_counter}/{MAX_NO_CHANGE}) [Press 's' to skip]   ", end='\r')
             
+            # Interactive Skip
+            if msvcrt.kbhit():
+                key = msvcrt.getwch()
+                if key.lower() == 's':
+                    print("\n   ⏭️  Skipping wait (User Request). Proceeding.")
+                    break
+
             if no_change_counter >= MAX_NO_CHANGE:
                  print("\n   ⚠️  Max wait time reached. Proceeding.")
                  break
@@ -109,10 +116,9 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
             if known_names and check_name:
                 # Basic check: exact match of name
                 if check_name in known_names:
-                    skipped_count += 1
-                    # Minimal one-line log for skipped to keep console clean but alive
-                    # print(f"      ⏭️  Skipped (Known): {listing_name}") 
-                    continue
+                    # skipped_count += 1
+                    # continue
+                    pass
             
             # 2. Duplicate URL Check
             href = listing.get_attribute('href')
@@ -197,30 +203,51 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
             business.reviews_count = None
             
             try:
-                # Method 1: Robust Aria Label Scan
+                # Method 1: Robust Aria Label Scan (Stars)
                 aria_selector = 'span[role="img"][aria-label*="stars"]'
                 
                 # Scan top 5 matches to find the one that likely belongs to the main header
                 count_candidates = details_pane.locator(aria_selector).count()
+                
                 for i in range(min(5, count_candidates)):
                     lbl = details_pane.locator(aria_selector).nth(i).get_attribute('aria-label')
                     if not lbl: continue
                     
                     import re
-                    # Example: "4.8 stars 153 Reviews"
+                    # Example: "4.8 stars 153 Reviews" (Old format) or just "4.6 stars" (New format)
                     rating_match = re.search(r'(\d+(\.\d+)?) stars', lbl)
                     count_match = re.search(r'([\d,]+)\s+Review', lbl, re.IGNORECASE)
                     
-                    if rating_match and count_match:
-                         business.reviews_average = float(rating_match.group(1))
-                         business.reviews_count = int(count_match.group(1).replace(',', ''))
-                         break # Found a perfect match containing both
-                    
-                    # Capture partial if we haven't found better
-                    if rating_match and not business.reviews_average:
-                         business.reviews_average = float(rating_match.group(1))
+                    if rating_match:
+                         # Prioritize updating rating if found
+                         if not business.reviews_average:
+                             business.reviews_average = float(rating_match.group(1))
 
-                # Method 2: Button Text Fallback (Specific for Count)
+                    if count_match:
+                         business.reviews_count = int(count_match.group(1).replace(',', ''))
+                         break 
+                
+                # Method 1.5: Specific Review Count Element (New Google Maps Layout)
+                # Found span[role="img" aria-label="113 reviews"] which is separate from stars
+                if not business.reviews_count:
+                    # Scan for any img role with "reviews" in label
+                    review_spans = details_pane.locator('span[role="img"][aria-label*="reviews"]').all()
+                    for span in review_spans[:3]: # check first few
+                        lbl = span.get_attribute('aria-label')
+                        # "113 reviews"
+                        c_match = re.search(r'([\d,]+)\s+reviews', lbl, re.IGNORECASE)
+                        if c_match:
+                            business.reviews_count = int(c_match.group(1).replace(',', ''))
+                            break
+                    
+                    # Method 1.6: Parens text fallback (e.g. "(113)") next to stars
+                    # Sometimes no aria-label, but text is "(113)"
+                    if not business.reviews_count and business.reviews_average:
+                        # Try to find text matching (\d+) near the rating
+                        # This is harder to target precisely, so we rely on checks above mostly.
+                        pass
+
+                # Method 2: Button Text Fallback (Specific for Count - e.g. "123 Reviews" button)
                 if not business.reviews_count:
                     btn_xpath = '//button[contains(@aria-label, "Reviews")]'
                     if details_pane.locator(btn_xpath).count() > 0:

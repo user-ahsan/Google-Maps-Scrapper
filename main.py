@@ -153,7 +153,9 @@ def main():
     # 3. Start Orchestration
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not args.headed)
-        page = browser.new_page(locale="en-GB")
+        # User agent to ensure standard desktop view (fixes missing review counts)
+        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        page = browser.new_page(locale="en-GB", user_agent=ua)
 
         page.goto("https://www.google.com/maps", timeout=20000)
         

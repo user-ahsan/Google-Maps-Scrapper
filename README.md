@@ -1,156 +1,112 @@
-# Google Maps Scraper (Google Sheets Edition)
+# Google Maps Scraper (Professional Edition)
 
-A robust, production-ready Python tool for scraping business data from Google Maps and saving it directly to **Google Sheets**.
-
-This updated version reads queries from `input.txt` and appends all results to a Google Sheet, making data collection seamless and collaborative.
+A robust, enterprise-grade Python tool for scraping business data from Google Maps. It supports **offline csv storage**, **Google Sheets integration**, real-time deduplication, and intelligent error handling.
 
 ## 🚀 Features
 
-- **Google Sheets Integration**: Automatically appends scraped data to your designated Google Sheet.
-- **Bulk Search**: Reads multiple queries from `input.txt`.
-- **Duplicate Detection**: Basic duplicate detection (further enabled by Sheet logic).
-- **Resilient**: Handles network timeouts and loading states automatically.
+-   **Dual Mode Storage**:
+    -   **Cloud**: Automatically syncs data to Google Sheets ("Gmaps Leads").
+    -   **Offline**: Saves data locally to `GMaps Data/` CSVs if no internet or credentials are found.
+-   **Smart Deduplication**: Checks against existing records (locally and online) to prevent duplicate entries before clicking.
+-   **Optimization**: Pre-loads known business names to skip redundant clicks, significantly speeding up large scrapes.
+-   **Standardized Extraction**: Captures Name, Phone, Address, Website, **Business Status** (Open/Closed), **Review Count**, **Average Rating**, and Coordinates.
+-   **Resilient**:
+    -   Handles network timeouts and loading states.
+    -   Standardized User-Agent to ensure consistent data extraction (fixes missing review counts).
+    -   **Interactive Skip**: Press `s` during the scrolling phase to skip waiting if no new results appear.
+-   **Bulk Search**: Reads multiple queries from `input.txt` or via command line argument.
 
 ---
 
 ## 📋 Prerequisites
 
-- **Python 3.8+** must be installed on your system.
-- **Google Cloud Service Account**: You need a `credentials.json` file.
-- **Google Sheet**: A Sheet shared with your service account.
+-   **Python 3.8+**
+-   **Google Cloud Service Account** (Optional, for Sheets Sync):
+    -   `credentials.json` file in the root directory.
+    -   A Google Sheet named "Gmaps Leads" (or similar) shared with the service account email.
 
 ---
 
 ## 🛠️ Installation & Setup
 
-### 1. 🛠️ Automated Setup (Recommended)
-Choose your operating system below for the easiest start.
+### 1. Automated Setup (Recommended)
+**Windows**:
+Double-click `setup.bat` or run:
+```cmd
+setup.bat
+```
 
-#### 🐧 Linux (Ubuntu/Debian)
+**Mac/Linux**:
 ```bash
-# 1. Give permission
 chmod +x setup.sh
-
-# 2. Run setup
 ./setup.sh
 ```
 
-#### 🍎 macOS
-1.  Double-click `setup_mac.command`.
-2.  **Note**: If it says "permission denied" or "can't be opened":
-    -   Right-click the file -> Open -> Open.
-    -   _Or run checks in terminal:_ `chmod +x setup_mac.command` then run it.
-
-#### 🪟 Windows
-1.  Double-click `setup.bat` in the folder.
-2.  **OR** run via Command Prompt:
-    ```cmd
-    setup.bat
-    ```
-
----
-
-### 2. Manual Setup (Advanced)
-Only do this if the automated scripts fail.
-
-**Linux/macOS**
+### 2. Manual Setup
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
-```
-
-**Windows**
-```cmd
+# Create virtual environment
 python -m venv venv
+
+# Activate it
+# Windows:
 venv\Scripts\activate
+# Mac/Linux:
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 playwright install chromium
 ```
-
-### 3. Google Sheets Setup
-1.  **Get Credentials**: Obtain a `credentials.json` file for a Google Service Account (from Google Cloud Console).
-2.  **Place File**: Save `credentials.json` in the **root** of this project folder.
-3.  **Share Sheet**:
-    -   Create a new Google Sheet (e.g., named "Gmaps Leads").
-    -   Open `credentials.json` and copy the `client_email` address.
-    -   **Share** your Google Sheet with that email address (give "Editor" access).
 
 ---
 
 ## 🏃 Usage
 
-### 1. Add Queries
-Edit `input.txt` and add your search terms (one per line):
-```text
-retail store in riyadh
-coffee shops in jeddah
-restaurants in london
-```
+The entry point is `main.py`.
 
-### 2. Run the Scraper
-### 2. Run the Scraper
-Always make sure your virtual environment is active (or call the python binary directly).
+### 1. Basic Run (Reads from input.txt)
+1. Add queries to `input.txt` (one per line).
+2. Run:
+   ```bash
+   venv\Scripts\python main.py
+   ```
 
-**Linux/macOS**
+### 2. Single Query via Command Line
 ```bash
-./venv/bin/python3 leads_scrapping.py
+venv\Scripts\python main.py -s "gyms in London"
 ```
 
-**Windows**
-```cmd
-venv\Scripts\python leads_scrapping.py
+### 3. Limited Run (Headed Mode)
+Great for debugging or watching the process.
+```bash
+venv\Scripts\python main.py -s "coffee shops" -t 10 -headed
 ```
 
-### 3. Check Results
-- The script will process each query in `input.txt`.
-- Results are **appended** to the first worksheet of your Google Sheet.
-- **Columns**: `Name`, `Address`, `Website`, `Phone`, `Location`, `Reviews`, `Coordinates`, etc.
+**Arguments:**
+- `-s`, `--search`: Search query string.
+- `-t`, `--total`: Limit number of results to scrape per query.
+- `-headed`, `--headed`: Run browser in visible mode (default is headless).
+- `-y`, `--yes`: Auto-accept prompts (useful for automation).
 
 ---
 
-## 🧪 Verification & Testing
-To ensure everything is working correctly, you can run the following test scripts from the root directory.
+## 🧪 Verification
+Run the improved diagnostics included in the main script, or use specific test tools:
 
-### 1. Environment Check
-Checks if Python, required libraries, and config files (`credentials.json`, `input.txt`) are present.
-- **Windows**: `venv\Scripts\python test/test_env.py`
-- **Mac/Linux**: `./venv/bin/python3 test/test_env.py`
-
-### 2. Browser Test
-Launches the browser (headed mode) and visits Google to verify Playwright installation.
-- **Windows**: `venv\Scripts\python test/test_browser.py`
-- **Mac/Linux**: `./venv/bin/python3 test/test_browser.py`
-
-### 3. Sheets Connectivity Test
-Writes a random test key to your Google Sheet (cell Z1), reads it back, and deletes it. Verifies API access.
-- **Windows**: `venv\Scripts\python test/test_sheets.py`
-- **Mac/Linux**: `./venv/bin/python3 test/test_sheets.py`
-
-### 4. Basic Scraper Test
-Runs a real scraper test (without saving to sheets) to check if selectors and scrolling are working on Google Maps.
-- **Windows**: `venv\Scripts\python test/test_scraper_basic.py`
-- **Mac/Linux**: `./venv/bin/python3 test/test_scraper_basic.py`
+- `venv\Scripts\python test/test_env.py`: Check environment.
+- `venv\Scripts\python test/test_sheets.py`: Check Google Sheets write permissions.
 
 ---
 
-## ⚙️ Configuration
-You can tweak settings in `leads_scrapping.py`:
-- `SHEET_NAME`: Name of your Google Sheet (Default: "Gmaps Leads").
-- `TOTAL_RESULTS_PER_QUERY`: Max results per query (Default: 100).
+## 📂 Data Output
 
----
-
-## 📂 Output
-All data goes to the **Google Sheet**. Local CSV/Excel files are NOT generated by default in this version to save space.
-
----
+-   **Local**: `GMaps Data/Gmaps Leads.csv` (Primary source of truth for offline mode).
+-   **Cloud**: Appended to "Gmaps Leads" spreadsheet (Worksheet: "Data 1" or first available).
 
 ## ❓ Troubleshooting
 
-**Q: `SpreadsheetNotFound` Error**
-A: Ensure the Sheet name matches `SHEET_NAME` in the script AND that you have **shared** the sheet with the Service Account email found in `credentials.json`.
+**Q: Review counts are missing?**
+A: This version uses a fixed Desktop User-Agent to ensure Google serves the full desktop site, which includes review counts. Ensure you are running the latest code.
 
-**Q: `credentials.json` not found**
-A: Make sure the file is exactly named `credentials.json` and is in the same folder as `leads_scrapping.py`.
+**Q: "SpreadsheetNotFound" Error**
+A: Ensure you have shared your Google Sheet with the `client_email` found in `credentials.json`. The script looks for a sheet named "Gmaps Leads" by default.
