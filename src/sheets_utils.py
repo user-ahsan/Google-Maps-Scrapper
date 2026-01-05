@@ -475,3 +475,71 @@ def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
                 pass
                 
     return known_names
+
+def prune_duplicates(worksheet):
+    """
+    Reads all data from the sheet, identifies duplicates using generate_unique_key,
+    and rewrites the sheet with only unique records.
+    """
+    try:
+        print_sheet_status("CLEANING", worksheet.spreadsheet.title, worksheet.spreadsheet.id, "Scanning for duplicates to prune...")
+        
+        # 1. Read All Data
+        all_values = worksheet.get_all_values()
+        if not all_values or len(all_values) < 2:
+            print("            ↳ Sheet is empty or just headers. Skipping.")
+            return
+
+        headers = all_values[0]
+        data_rows = all_values[1:]
+        
+        # 2. Identify Unique Rows
+        unique_rows = []
+        seen_keys = set()
+        duplicates_count = 0
+        
+        # Map headers to indices for key generation
+        def get_col_index(name_variations):
+            for name in name_variations:
+                if name in headers: return headers.index(name)
+            return -1
+
+        name_idx = get_col_index(['Name', 'name'])
+        phone_idx = get_col_index(['Phone Number', 'phone_number', 'Phone'])
+        address_idx = get_col_index(['Address', 'address'])
+
+        for row in data_rows:
+            # Build minimal dict for key generation
+            row_data = {}
+            if name_idx != -1 and name_idx < len(row): row_data['Name'] = row[name_idx]
+            if phone_idx != -1 and phone_idx < len(row): row_data['Phone Number'] = row[phone_idx]
+            if address_idx != -1 and address_idx < len(row): row_data['Address'] = row[address_idx]
+            
+            key = generate_unique_key(row_data)
+            
+            if key and key in seen_keys:
+                duplicates_count += 1
+            else:
+                if key: seen_keys.add(key)
+                unique_rows.append(row)
+        
+        if duplicates_count == 0:
+            print("            ↳ No duplicates found. Sheet is clean.")
+            return
+
+        # 3. Rewrite Sheet (Safe Mode: Clear and Upload)
+        print(f"            ↳ Found {duplicates_count} duplicates. Removing...")
+        
+        # We rewrite everything: Headers + Unique Data
+        new_data = [headers] + unique_rows
+        
+        # Clear sheet content
+        worksheet.clear()
+        
+        # Batch Update
+        worksheet.update(values=new_data)
+        
+        print(f"            ↳ ✅ Pruned {duplicates_count} duplicates. Total rows: {len(new_data)}")
+        
+    except Exception as e:
+        print(f"            ❌ Error pruning duplicates: {e}")

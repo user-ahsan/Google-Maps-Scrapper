@@ -102,6 +102,11 @@ def main():
     if online_mode and sheets_client:
         # 2. Sync Offline Data
         sync_offline_data(sheets_client)
+        
+        # 3. Auto-Prune Duplicates (Maintenance)
+        worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
+        if worksheet:
+             sheets_utils.prune_duplicates(worksheet)
     else:
         print("\n⚠️ ORANGE ALERT: Running in OFFLINE MODE. Data will be saved to CSV only.")
         if not args.yes:
