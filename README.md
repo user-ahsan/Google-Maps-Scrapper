@@ -27,86 +27,146 @@ A robust, enterprise-grade Python tool for scraping business data from Google Ma
 
 ---
 
-## 🛠️ Installation & Setup
+## 🛠️ Installation & Setup (Copy-Paste Ready)
 
-### 1. Automated Setup (Recommended)
-**Windows**:
-Double-click `setup.bat` or run:
+### 🪟 Windows Setup
+
+**Option 1: Automated (Easiest)**
+Double-click `setup.bat` in the folder.
+
+**Option 2: Manual (Command Prompt)**
+Copy and paste these commands one by one:
 ```cmd
-setup.bat
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+playwright install chromium
 ```
 
-**Mac/Linux**:
+### 🍎 Mac / 🐧 Linux Setup
+
+**Option 1: Automated**
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-### 2. Manual Setup
+**Option 2: Manual (Terminal)**
 ```bash
-# Create virtual environment
-python -m venv venv
-
-# Activate it
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
+python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 playwright install chromium
 ```
 
 ---
 
-## 🏃 Usage
+## 🏃 Usage Commands
 
-The entry point is `main.py`.
+The entry point is `main.py`. Ensure your virtual environment is active before running these.
 
-### 1. Basic Run (Reads from input.txt)
-1. Add queries to `input.txt` (one per line).
-2. Run:
-   ```bash
-   venv\Scripts\python main.py
-   ```
+### 🪟 Windows Commands
 
-### 2. Single Query via Command Line
-```bash
-venv\Scripts\python main.py -s "gyms in London"
+**1. Run Standard Scraper (Reads input.txt)**
+```cmd
+venv\Scripts\python main.py
 ```
 
-### 3. Limited Run (Headed Mode)
-Great for debugging or watching the process.
-```bash
+**2. Single Query Search**
+```cmd
+venv\Scripts\python main.py -s "gyms in New York"
+```
+
+**3. Run with Browser Visible (Headed Mode)**
+*Use this if you want to see what the bot is doing.*
+```cmd
 venv\Scripts\python main.py -s "coffee shops" -t 10 -headed
 ```
 
+### 🍎 Mac / 🐧 Linux Commands
+
+**1. Run Standard Scraper (Reads input.txt)**
+```bash
+./venv/bin/python3 main.py
+```
+
+**2. Single Query Search**
+```bash
+./venv/bin/python3 main.py -s "gyms in New York"
+```
+
+**3. Run with Browser Visible**
+```bash
+./venv/bin/python3 main.py -s "coffee shops" -t 10 -headed
+```
+
 **Arguments:**
-- `-s`, `--search`: Search query string.
-- `-t`, `--total`: Limit number of results to scrape per query.
-- `-headed`, `--headed`: Run browser in visible mode (default is headless).
+- `-s`, `--search`: Search query string (overrides input.txt).
+- `-t`, `--total`: Limit number of results to scrape per query (default: 1,000,000).
+- `-headed`: Run browser in visible mode (default is headless/invisible).
 - `-y`, `--yes`: Auto-accept prompts (useful for automation).
 
 ---
 
-## 🧪 Verification
-Run the improved diagnostics included in the main script, or use specific test tools:
+## 🔧 Troubleshooting & Diagnostics
 
-- `venv\Scripts\python test/test_env.py`: Check environment.
-- `venv\Scripts\python test/test_sheets.py`: Check Google Sheets write permissions.
+If you encounter issues, use the included test scripts to diagnose the problem.
 
----
+### 1. Check Environment & Configuration
+*Verifies Python version, libraries, and presence of `credentials.json` / `input.txt`.*
 
-## 📂 Data Output
+**Windows**:
+```cmd
+venv\Scripts\python test/test_env.py
+```
+**Mac/Linux**:
+```bash
+./venv/bin/python3 test/test_env.py
+```
 
--   **Local**: `GMaps Data/Gmaps Leads.csv` (Primary source of truth for offline mode).
--   **Cloud**: Appended to "Gmaps Leads" spreadsheet (Worksheet: "Data 1" or first available).
+### 2. Test Browser Launch
+*Launches a visible browser window and visits Google. If this fails, Playwright is not installed correctly.*
 
-## ❓ Troubleshooting
+**Windows**:
+```cmd
+venv\Scripts\python test/test_browser.py
+```
+**Mac/Linux**:
+```bash
+./venv/bin/python3 test/test_browser.py
+```
+
+### 3. Test Google Sheets Connection
+*Attempts to write a test value to your Sheet and delete it. Verifies your `credentials.json` and Sheet permissions.*
+
+**Windows**:
+```cmd
+venv\Scripts\python test/test_sheets.py
+```
+**Mac/Linux**:
+```bash
+./venv/bin/python3 test/test_sheets.py
+```
+
+### 4. Test Basic Scraping Logic
+*Runs a mini-scrape without saving data, just to check if Google Maps selectors have changed.*
+
+**Windows**:
+```cmd
+venv\Scripts\python test/test_scraper_basic.py
+```
+**Mac/Linux**:
+```bash
+./venv/bin/python3 test/test_scraper_basic.py
+```
+
+### Common Issues
 
 **Q: Review counts are missing?**
-A: This version uses a fixed Desktop User-Agent to ensure Google serves the full desktop site, which includes review counts. Ensure you are running the latest code.
+A: This version uses a fixed Desktop User-Agent to ensure Google serves the full desktop site. If they are still missing, run the scraper with `-headed` to see if Google is serving a mobile view or blocking the request.
 
 **Q: "SpreadsheetNotFound" Error**
 A: Ensure you have shared your Google Sheet with the `client_email` found in `credentials.json`. The script looks for a sheet named "Gmaps Leads" by default.
+
+**Q: Script freezes while scrolling?**
+A: Press `s` in the terminal to force the script to skip the wait and proceed to scraping the current list.

@@ -1,6 +1,12 @@
 import datetime
 from playwright.sync_api import sync_playwright
-import msvcrt # For interactive commands (Windows)
+
+# Cross-platform interactive check
+try:
+    import msvcrt # Windows only
+    IS_WINDOWS = True
+except ImportError:
+    IS_WINDOWS = False
 
 # Import data models and helpers from sheets_utils
 try:
@@ -70,10 +76,11 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
         if current_count == previously_counted:
             no_change_counter += 1
             if no_change_counter >= 5:
-                 print(f"      ...waiting ({no_change_counter}/{MAX_NO_CHANGE}) [Press 's' to skip]   ", end='\r')
+                 msg = " [Press 's' to skip]" if IS_WINDOWS else ""
+                 print(f"      ...waiting ({no_change_counter}/{MAX_NO_CHANGE}){msg}   ", end='\r')
             
-            # Interactive Skip
-            if msvcrt.kbhit():
+            # Interactive Skip (Windows Only)
+            if IS_WINDOWS and msvcrt.kbhit():
                 key = msvcrt.getwch()
                 if key.lower() == 's':
                     print("\n   ⏭️  Skipping wait (User Request). Proceeding.")
