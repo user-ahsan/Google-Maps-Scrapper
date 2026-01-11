@@ -174,42 +174,43 @@ def main():
             for index, search_for in enumerate(search_list):
                 print(f"\n-----\n🔎 Processing Query {index+1}/{len(search_list)}: {search_for}")
 
-            # REFACTORED CALL: Delegate scraping to module
-            # We pass existing keys helper if needed, but scrape_data mainly returns a list.
-            # Real-time dedupe in scrape_data requires keys.
-            
-            existing_keys = set()
-            if online_mode and worksheet:
-                 print("   Fetching real-time existing records for deduplication...")
-                 existing_keys = sheets_utils.get_existing_keys(worksheet)
+                # REFACTORED CALL: Delegate scraping to module
+                # We pass existing keys helper if needed, but scrape_data mainly returns a list.
+                # Real-time dedupe in scrape_data requires keys.
+                
+                existing_keys = set()
+                if online_mode and worksheet:
+                     print("   Fetching real-time existing records for deduplication...")
+                     existing_keys = sheets_utils.get_existing_keys(worksheet)
 
-            # Scrape
-            # Scrape
-            business_list_obj = leads_scrapping.scrape_data(
-                page, 
-                search_for, 
-                total, 
-                existing_keys, 
-                known_names_sheet=known_names_sheet, 
-                known_names_local=known_names_local,
-                auto_accept=not args.manual
-            )
-            
-            # Save to CSV (Always)
-            clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
-            csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
-            print(f"\n   💾 Saved to main DB: {csv_path}")
+                # Scrape
+                # Scrape
+                business_list_obj = leads_scrapping.scrape_data(
+                    page, 
+                    search_for, 
+                    total, 
+                    existing_keys, 
+                    known_names_sheet=known_names_sheet, 
+                    known_names_local=known_names_local,
+                    auto_accept=not args.manual
+                )
+                
+                # Save to CSV (Always)
+                clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
+                csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
+                print(f"\n   💾 Saved to main DB: {csv_path}")
 
-            # Upload to Sheets (If Online)
-            if online_mode and worksheet:
-                try:
-                        df = business_list_obj.dataframe()
-                        added, dupes = sheets_utils.upload_data_to_sheet(worksheet, df)
-                        print(f"   ☁️  Upload complete: +{added} new, {dupes} duplicates.")
-                except Exception as e:
-                    print(f"Failed to upload: {e}")
+                # Upload to Sheets (If Online)
+                if online_mode and worksheet:
+                    try:
+                            df = business_list_obj.dataframe()
+                            added, dupes = sheets_utils.upload_data_to_sheet(worksheet, df)
+                            print(f"   ☁️  Upload complete: +{added} new, {dupes} duplicates.")
+                    except Exception as e:
+                        print(f"Failed to upload: {e}")
 
         except leads_scrapping.StopScrapingException:
+
             print("\n🛑 Execution Interrupted by User (Shift+Q). Stopping queues.")
         
         browser.close()

@@ -7,6 +7,21 @@ try:
     IS_WINDOWS = True
 except ImportError:
     IS_WINDOWS = False
+    import sys, tty, termios, select
+
+    def unix_kbhit():
+        dr, dw, de = select.select([sys.stdin], [], [], 0)
+        return dr != []
+
+    def unix_getch():
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
 
 # Import data models and helpers from sheets_utils
 try:
@@ -117,22 +132,24 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
         if current_count == previously_counted:
             no_change_counter += 1
             if no_change_counter >= 5:
-                 msg = " [Press 's' to skip, 'q' to next, 'Shift+Q' to stop all]" if IS_WINDOWS else ""
+                 msg = " [Press 's' to skip, 'q' to next, 'Shift+Q' to stop all]"
                  print(f"      ...Scrolling & Loading new results ({no_change_counter}/{MAX_NO_CHANGE}){msg}   ", end='\r')
             
-            # Interactive Skip (Windows Only)
-            if IS_WINDOWS and msvcrt.kbhit():
-                key = msvcrt.getwch()
+            # Interactive Skip (Cross-Platform)
+            key = None
+            if IS_WINDOWS:
+               if msvcrt.kbhit():
+                   key = msvcrt.getwch()
+            else:
+               if unix_kbhit():
+                   key = unix_getch()
+
+            if key:
                 if key.lower() == 's':
                     print("\n   ⏭️  Skipping wait (User Request). Proceeding.")
                     break
                 elif key.lower() == 'q':
-                    if key == 'Q' or key == 'q': # Check actual key for uppercase if getwch preserves it?
-                         # MSVCRT getwch returns bytes or strings depending on version, usually case sensitive.
-                         # Standard 'q' is 113, 'Q' is 81.
-                         # But let's check strict input.
-                         pass
-                    
+                    # ... logic same as before ...
                     if key == 'Q':
                          print("\n   🛑 HARD STOP (User Request). Stopping all queries...")
                          raise StopScrapingException("User pressed Shift+Q")
