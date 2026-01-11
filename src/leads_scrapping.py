@@ -16,23 +16,56 @@ except ImportError:
     print("Error: Could not import from sheets_utils.py. Make sure it is in the same directory.")
     sys.exit(1)
 
-def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
+def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None):
     """
     Scrapes data for a single query using the provided Playwright page.
     Args:
         existing_keys: set of 'Name|Phone' keys for final check.
-        known_names: set of simplified lowercase names for fast pre-check.
+        known_names_sheet: set of simplified lowercase names from Online Sheet.
+        known_names_local: set of simplified lowercase names from Local CSVs.
     """
     print(f"\n🚀 STARTED SCRAPING: {search_for}")
     print(f"   Target: {total} leads")
-    if known_names:
-        print(f"   Optimization: Checking against ~{len(known_names)} known names.")
+    
+    # Combined stats for log
+    k_sheet = len(known_names_sheet) if known_names_sheet else 0
+    k_local = len(known_names_local) if known_names_local else 0
+    print(f"   Optimization: Checking against {k_sheet} online and {k_local} local records.")
 
-    page.locator('//input[@id="searchboxinput"]').fill(search_for)
+    # Robust Search Box Locator for A/B Testing
+    search_box = None
+    selectors = [
+        '//input[@id="searchboxinput"]', 
+        '//input[@id="searchbox-input"]', 
+        '//input[@aria-label="Search Google Maps"]',
+        'input[name="q"]'
+    ]
+    
+    for sel in selectors:
+        if page.locator(sel).count() > 0:
+            search_box = page.locator(sel).first
+            break
+            
+    if search_box:
+        search_box.fill(search_for)
+    else:
+        print("   ❌ CRITICAL: Could not find search box. Google layout might have changed.")
+        return BusinessList()
+        
     page.wait_for_timeout(2000)
 
     page.keyboard.press("Enter")
     page.wait_for_timeout(4000)
+
+    # --- VERIFICATION STEP ---
+    print(f"\n   🔎 VERIFY SEARCH URL:")
+    print(f"   {page.url}")
+    if IS_WINDOWS:
+         print("   Press Enter in terminal to confirm and start scrolling... ", end='')
+         input()
+    else:
+         page.wait_for_timeout(3000) # Auto wait if not interactive
+    # -------------------------
 
     # Check if results found
     try:
@@ -44,7 +77,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
     previously_counted = 0
     feed_selector = 'div[role="feed"]'
     no_change_counter = 0
-    MAX_NO_CHANGE = 90 # ~180 seconds (90 * 2s) 
+    MAX_NO_CHANGE = 150 # Increased to ~5 mins for 10k lists 
     
     # --- LIST COLLECTING LOOP ---
     print(f"   📜 Scrolling to load listings...")
@@ -120,12 +153,20 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names=None):
             # Simple normalization for check
             check_name = listing_name.lower().strip()
             
-            if known_names and check_name:
-                # Basic check: exact match of name
-                if check_name in known_names:
-                    # skipped_count += 1
-                    # continue
-                    pass
+            if listing_name:
+                check_name = listing_name.lower().strip()
+                
+                # Granular Checks
+                if check_name:
+                    if known_names_sheet and check_name in known_names_sheet:
+                        print(f"      ⏭️  Skipping '{listing_name}' (Found in Google Sheet)")
+                        skipped_count += 1
+                        continue
+                    
+                    if known_names_local and check_name in known_names_local:
+                        print(f"      ⏭️  Skipping '{listing_name}' (Found in Local DB)")
+                        skipped_count += 1
+                        continue
             
             # 2. Duplicate URL Check
             href = listing.get_attribute('href')

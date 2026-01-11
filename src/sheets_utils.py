@@ -454,7 +454,7 @@ def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
             print(f"Error reading names from sheet: {e}")
 
     # 2. From Local CSVs
-    if os.path.exists(local_dir):
+    if local_dir and os.path.exists(local_dir):
         # We don't print here to avoid spamming logs, assuming get_all_seen_urls or similar ran before
         csv_files = glob.glob(os.path.join(local_dir, '**', '*.csv'), recursive=True)
         

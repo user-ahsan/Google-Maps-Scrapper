@@ -14,7 +14,7 @@ except ImportError as e:
 
 # --- DIAGNOSTICS & SYNC ---
 
-def run_diagnostics():
+def run_diagnostics(force_offline=False):
     """Run startup checks for Browser and Sheets."""
     print("\n" + "="*50)
     print("   🔍 STARTUP DIAGNOSTICS")
@@ -40,7 +40,10 @@ def run_diagnostics():
     sheets_client = None
     online_mode = False
     
-    sheets_client = sheets_utils.connect_to_sheets()
+    if force_offline:
+        print("⏩ SKIPPED (Offline Mode Force)")
+    else:
+        sheets_client = sheets_utils.connect_to_sheets()
     if sheets_client:
         print("✅ PASS")
         online_mode = True
@@ -90,10 +93,11 @@ def main():
     parser.add_argument("-t", "--total", type=int)
     parser.add_argument("-headed", "--headed", action="store_true", help="Run with browser visible")
     parser.add_argument("-y", "--yes", action="store_true", help="Auto-accept prompts")
+    parser.add_argument("-offline", "--offline", action="store_true", help="Force offline mode (Skip Sheets Sync)")
     args = parser.parse_args()
 
     # 1. Run Diagnostics
-    browser_ok, sheets_client, online_mode = run_diagnostics()
+    browser_ok, sheets_client, online_mode = run_diagnostics(force_offline=args.offline)
 
     if not browser_ok:
         if not args.yes:
@@ -114,21 +118,24 @@ def main():
              if resp.lower() == 'n':
                  sys.exit()
     
-    # --- OPTIMIZATION: Pre-load SEEN URLS & NAMES ---
-    global_seen_urls = set()
-    global_known_names = set()
-    worksheet = None
+    # --- OPTIMIZATION: Pre-load SEEN NAMES (Granular) ---
+    known_names_sheet = set()
+    known_names_local = set()
     
+    # 1. Local Data (Always Load)
+    print("   🧠 Loading Local DB for deduplication...", end=" ")
+    known_names_local = sheets_utils.get_all_known_names(None, local_dir='GMaps Data')
+    print(f"[{len(known_names_local)} records]")
+
+    # 2. Online Data (If Online)
+    worksheet = None
     if online_mode and sheets_client:
         worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
-        # Load from both Online (if avail) and Offline
-        # global_seen_urls = sheets_utils.get_all_seen_urls(worksheet) # (Optional if we use names optimization)
-        global_known_names = sheets_utils.get_all_known_names(worksheet)
-        print(f"   🧠 Loaded {len(global_known_names)} unique business names for instant skip.")
-    elif not online_mode:
-        # Load offline only
-        global_known_names = sheets_utils.get_all_known_names(None)
-        print(f"   🧠 Loaded {len(global_known_names)} unique business names (Offline) for instant skip.")
+        print("   🧠 Loading Sheet Data for deduplication...", end=" ")
+        known_names_sheet = sheets_utils.get_all_known_names(worksheet, local_dir=None) 
+        print(f"[{len(known_names_sheet)} records]")
+    
+    # Combined for global stats if needed, or just pass both
     # ----------------------------------------
     
     # Determine Search List
@@ -173,7 +180,14 @@ def main():
 
             # Scrape
             # Scrape
-            business_list_obj = leads_scrapping.scrape_data(page, search_for, total, existing_keys, global_known_names)
+            business_list_obj = leads_scrapping.scrape_data(
+                page, 
+                search_for, 
+                total, 
+                existing_keys, 
+                known_names_sheet=known_names_sheet, 
+                known_names_local=known_names_local
+            )
             
             # Save to CSV (Always)
             clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
