@@ -93,9 +93,8 @@ echo ==========================================
 echo    Scraping Finished.
 echo ==========================================
 echo.
-SET /P RERUN="Run again? (Y/N): "
-IF /I "%RERUN%"=="Y" GOTO MENU
-EXIT /b 0
+pause
+GOTO MENU
 
 :ERROR_EXIT
 EXIT /b 0
