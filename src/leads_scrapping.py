@@ -16,7 +16,12 @@ except ImportError:
     print("Error: Could not import from sheets_utils.py. Make sure it is in the same directory.")
     sys.exit(1)
 
-def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None):
+# --- CUSTOM EXCEPTIONS ---
+class StopScrapingException(Exception):
+    """Raised when the user wants to stop the entire scraping process."""
+    pass
+
+def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False):
     """
     Scrapes data for a single query using the provided Playwright page.
     Args:
@@ -60,9 +65,12 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     # --- VERIFICATION STEP ---
     print(f"\n   🔎 VERIFY SEARCH URL:")
     print(f"   {page.url}")
-    if IS_WINDOWS:
+    if IS_WINDOWS and not auto_accept:
          print("   Press Enter in terminal to confirm and start scrolling... ", end='')
          input()
+    elif auto_accept:
+         print("   ⏩ Auto-accepting URL (Autonomous Mode)")
+         page.wait_for_timeout(2000)
     else:
          page.wait_for_timeout(3000) # Auto wait if not interactive
     # -------------------------
@@ -109,8 +117,8 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
         if current_count == previously_counted:
             no_change_counter += 1
             if no_change_counter >= 5:
-                 msg = " [Press 's' to skip]" if IS_WINDOWS else ""
-                 print(f"      ...waiting ({no_change_counter}/{MAX_NO_CHANGE}){msg}   ", end='\r')
+                 msg = " [Press 's' to skip, 'q' to next, 'Shift+Q' to stop all]" if IS_WINDOWS else ""
+                 print(f"      ...Scrolling & Loading new results ({no_change_counter}/{MAX_NO_CHANGE}){msg}   ", end='\r')
             
             # Interactive Skip (Windows Only)
             if IS_WINDOWS and msvcrt.kbhit():
@@ -118,6 +126,19 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 if key.lower() == 's':
                     print("\n   ⏭️  Skipping wait (User Request). Proceeding.")
                     break
+                elif key.lower() == 'q':
+                    if key == 'Q' or key == 'q': # Check actual key for uppercase if getwch preserves it?
+                         # MSVCRT getwch returns bytes or strings depending on version, usually case sensitive.
+                         # Standard 'q' is 113, 'Q' is 81.
+                         # But let's check strict input.
+                         pass
+                    
+                    if key == 'Q':
+                         print("\n   🛑 HARD STOP (User Request). Stopping all queries...")
+                         raise StopScrapingException("User pressed Shift+Q")
+                    else:
+                         print("\n   ⚠️  Quitting current query (User Request).")
+                         return BusinessList()
 
             if no_change_counter >= MAX_NO_CHANGE:
                  print("\n   ⚠️  Max wait time reached. Proceeding.")
@@ -159,12 +180,12 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 # Granular Checks
                 if check_name:
                     if known_names_sheet and check_name in known_names_sheet:
-                        print(f"      ⏭️  Skipping '{listing_name}' (Found in Google Sheet)")
+                        print(f"      ⏭️  Skipping '{listing_name}'".ljust(50) + "| [Found in Google Sheet]")
                         skipped_count += 1
                         continue
                     
                     if known_names_local and check_name in known_names_local:
-                        print(f"      ⏭️  Skipping '{listing_name}' (Found in Local DB)")
+                        print(f"      ⏭️  Skipping '{listing_name}'".ljust(50) + "| [Found in Local DB]")
                         skipped_count += 1
                         continue
             

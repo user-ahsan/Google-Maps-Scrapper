@@ -92,7 +92,7 @@ def main():
     parser.add_argument("-s", "--search", type=str)
     parser.add_argument("-t", "--total", type=int)
     parser.add_argument("-headed", "--headed", action="store_true", help="Run with browser visible")
-    parser.add_argument("-y", "--yes", action="store_true", help="Auto-accept prompts")
+    parser.add_argument("-m", "--manual", action="store_true", help="Enable manual verification prompt")
     parser.add_argument("-offline", "--offline", action="store_true", help="Force offline mode (Skip Sheets Sync)")
     args = parser.parse_args()
 
@@ -100,7 +100,9 @@ def main():
     browser_ok, sheets_client, online_mode = run_diagnostics(force_offline=args.offline)
 
     if not browser_ok:
-        if not args.yes:
+        if not args.manual:
+             pass # Auto-proceed if not manual mode
+        else:
              input("\n❌ Browser test failed. Check errors above. Press Enter to try anyway (or Ctrl+C to quit)...")
     
     if online_mode and sheets_client:
@@ -113,7 +115,7 @@ def main():
              sheets_utils.prune_duplicates(worksheet)
     else:
         print("\n⚠️ ORANGE ALERT: Running in OFFLINE MODE. Data will be saved to CSV only.")
-        if not args.yes:
+        if args.manual:
              resp = input("   Continue? (Y/n): ")
              if resp.lower() == 'n':
                  sys.exit()
@@ -166,8 +168,11 @@ def main():
 
         page.goto("https://www.google.com/maps", timeout=20000)
         
-        for index, search_for in enumerate(search_list):
-            print(f"\n-----\n🔎 Processing Query {index+1}/{len(search_list)}: {search_for}")
+        page.goto("https://www.google.com/maps", timeout=20000)
+        
+        try:
+            for index, search_for in enumerate(search_list):
+                print(f"\n-----\n🔎 Processing Query {index+1}/{len(search_list)}: {search_for}")
 
             # REFACTORED CALL: Delegate scraping to module
             # We pass existing keys helper if needed, but scrape_data mainly returns a list.
@@ -186,7 +191,8 @@ def main():
                 total, 
                 existing_keys, 
                 known_names_sheet=known_names_sheet, 
-                known_names_local=known_names_local
+                known_names_local=known_names_local,
+                auto_accept=not args.manual
             )
             
             # Save to CSV (Always)
@@ -203,6 +209,9 @@ def main():
                 except Exception as e:
                     print(f"Failed to upload: {e}")
 
+        except leads_scrapping.StopScrapingException:
+            print("\n🛑 Execution Interrupted by User (Shift+Q). Stopping queues.")
+        
         browser.close()
 
 if __name__ == "__main__":
