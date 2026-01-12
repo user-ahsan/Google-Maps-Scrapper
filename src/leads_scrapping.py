@@ -28,6 +28,8 @@ except ImportError:
 # Import data models and helpers from sheets_utils
 try:
     from .sheets_utils import Business, BusinessList, extract_coordinates_from_url, generate_unique_key
+    from .selector_manager import SelectorManager
+    from .logger import setup_logger
 except ImportError:
     import sys
     print("Error: Could not import from sheets_utils.py. Make sure it is in the same directory.")
@@ -44,6 +46,11 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     """
     print(f"\n🚀 STARTED SCRAPING: {search_for}")
     print(f"   Target: {total} leads | Limit: {max_scroll_time}s")
+
+    # --- SETUP UTILS ---
+    selector_manager = SelectorManager()
+    logger = setup_logger()
+    logger.info(f"Start Scraping: {search_for} (Target: {total})")
     
     # Combined stats for log
     k_sheet = len(known_names_sheet) if known_names_sheet else 0
@@ -52,12 +59,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
 
     # Robust Search Box Locator for A/B Testing
     search_box = None
-    selectors = [
-        'input[name="q"]',
-        'input#searchboxinput', 
-        'input#searchbox-input', 
-        'input[aria-label="Search Google Maps"]',
-    ]
+    selectors = selector_manager.get("search_box")
     
     print("   🔍 Waiting for search box...", end=" ", flush=True)
     for _ in range(30): # Wait up to 30 seconds (checks every 1s)
@@ -80,6 +82,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
              return BusinessList()
     else:
         print("\n   ❌ CRITICAL: Could not find search box. Google layout might have changed.")
+        logger.error("CRITICAL: Could not find search box. Layout changed.")
         return BusinessList()
         
     page.wait_for_timeout(2000)
@@ -108,7 +111,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
         return BusinessList()
 
     previously_counted = 0
-    feed_selector = 'div[role="feed"]'
+    feed_selector = selector_manager.get('feed')
     no_change_counter = 0
     MAX_NO_CHANGE = int(max_retries) # From config
     
@@ -134,7 +137,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             page.mouse.wheel(0, 10000)
             page.wait_for_timeout(2000)
 
-        current_count = page.locator('//a[contains(@href, "https://www.google.com/maps/place")]').count()
+        current_count = page.locator(selector_manager.get('listings')).count()
 
         if total and current_count >= total:
             print(f"   🛑 Hit limit of {total}.")
@@ -181,7 +184,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             no_change_counter = 0
             print(f"      Loaded: {current_count}...", end='\r')
 
-    listings = page.locator('//a[contains(@href, "https://www.google.com/maps/place")]').all()
+    listings = page.locator(selector_manager.get('listings')).all()
     if total:
         listings = listings[:total]
     
@@ -253,15 +256,15 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             # 1. Wait for H1 (Business Name) - Robust Check
             # We look for ANY h1 inside the main role, as class names change.
             try:
-                # Scoping: Try to find the details pane first
+                 # Scoping: Try to find the details pane first
                 # The details pane usually has role="main" and contains an h1.
                 # We prioritize the last opened one (highest z-index usually)
-                candidates = page.locator('div[role="main"]').all()
+                candidates = page.locator(selector_manager.get('details_pane')).all()
                 details_pane = None
                 
                 # Check candidates in reverse (newest first)
                 for pane in reversed(candidates):
-                     if pane.locator('h1').count() > 0:
+                     if pane.locator(selector_manager.get('business_name')).count() > 0:
                          details_pane = pane
                          break
                 
@@ -270,9 +273,10 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                     details_pane = page
                 
                 # Verify H1 exists
-                details_pane.locator('h1').first.wait_for(timeout=3000)
+                details_pane.locator(selector_manager.get('business_name')).first.wait_for(timeout=3000)
             except Exception as e:
                 print(f"      ⚠️  Skip: could not locate business details (H1 timeout). {e}")
+                logger.warning(f"Skip: H1 Timeout: {e}")
                 continue
 
             business = Business()
@@ -298,9 +302,10 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                          pass
                 return ""
 
+            # Method 3: Fallback specific text extraction for count
             # Extract Data
             # Name
-            business.name = safe_extract(lambda p: p.locator('h1'), "Name", required=True)
+            business.name = safe_extract(lambda p: p.locator(selector_manager.get('business_name')), "Name", required=True)
             if not business.name:
                 business.name = check_name or "Unknown"
 
@@ -308,13 +313,13 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             # Removed brittle 'div[class*="fontBodyMedium"]' dependency. Using .first or smarter lookups.
             # Usually the text is the direct child or inside a structured div we can just grab text from.
             business.address = safe_extract(
-                lambda p: p.locator('button[data-item-id="address"]'), 
+                lambda p: p.locator(selector_manager.get('address_button')), 
                 "Address"
             )
 
             # Website - Look for data-item-id="authority"
             web_text = safe_extract(
-                lambda p: p.locator('a[data-item-id="authority"]'), 
+                lambda p: p.locator(selector_manager.get('website_link')), 
                 "Website"
             )
             if web_text:
@@ -323,7 +328,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             
             # Phone - Look for data-item-id="phone:tel:"
             business.phone_number = safe_extract(
-                 lambda p: p.locator('button[data-item-id*="phone:tel:"]'),
+                 lambda p: p.locator(selector_manager.get('phone_button')),
                  "Phone"
             )
             
@@ -334,7 +339,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             try:
                 # Method 1: Robust Aria Label Scan (Stars)
                 # Look for the stars aria label which is usually "X.X stars X Reviews" or similar
-                aria_selector = 'span[role="img"][aria-label*="stars"]'
+                aria_selector = selector_manager.get('stars_aria')
                 
                 # We try to find the one closest to the top of the details pane
                 star_elements = details_pane.locator(aria_selector).all()
@@ -362,13 +367,14 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                     # "1,234 reviews" or "(1,234)"
                     
                     # 2a. Button check (common across layouts)
+                    # 2a. Button check (common across layouts)
                     reviews_btn_lbl = safe_extract(
-                        lambda p: p.locator('div[role="button"][aria-label*="reviews"]'), 
+                        lambda p: p.locator(selector_manager.get('reviews_button')), 
                         "Reviews Button Label"
                     ) # This gives text, but we want aria-label often.
                     
                     # Let's iterate elements with "reviews" in aria-label
-                    candidates = details_pane.locator('[aria-label*="reviews"]').all()
+                    candidates = details_pane.locator(selector_manager.get('reviews_generic')).all()
                     for c in candidates[:5]:
                         lbl = c.get_attribute('aria-label')
                         count_match = re.search(r'([\d,]+)\s+Review', lbl, re.IGNORECASE)
@@ -416,6 +422,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             
         except Exception as e:
             print(f"      ⚠️  Error: {e}")
+            logger.error(f"Error processing listing: {e}")
 
     print(f"\n   🏁 Finished. Scraped: {len(business_list.business_list)} | Skipped (Pre-Check): {skipped_count}")
     return business_list

@@ -47,6 +47,8 @@ datas.append(('credentials.json', '.'))
 if os.path.exists('assets'):
     datas.append(('assets', 'assets'))
 
+datas.append(('assets/selectors.json', 'assets'))
+
 # 5. Metadata
 try:
     datas.extend(copy_metadata('google-api-python-client'))

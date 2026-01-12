@@ -15,6 +15,9 @@ A robust, enterprise-grade Python tool for scraping business data from Google Ma
     -   Standardized User-Agent to ensure consistent data extraction (fixes missing review counts).
     -   **Interactive Skip**: Press `s` during the scrolling phase to skip waiting if no new results appear.
 -   **Bulk Search**: Reads multiple queries from `input.txt` or via command line argument.
+-   **Distribution Ready**:
+    -   **Dynamic Selectors**: All scraping selectors are stored in `assets/selectors.json`. You can fix the scraper by editing this file if Google changes their layout, without needing to re-compile the EXE.
+    -   **Robust Logging**: Detailed execution logs are saved to `%LOCALAPPDATA%\GoogleMapsScraper\scraper.log` for troubleshooting.
 
 ---
 

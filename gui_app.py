@@ -11,6 +11,7 @@ import tkinter as tk
 from src.controller import ScraperController
 from src.config_manager import ConfigManager
 from src import resource_utils
+from src.logger import setup_logger
 
 # --- THEME SETUP ---
 ctk.set_appearance_mode("Dark")
@@ -40,6 +41,8 @@ class ScraperGUI(ctk.CTk):
         # --- CONFIGURATION ---
         self.config_manager = ConfigManager()
         self.config = self.config_manager.load_config()
+        self.logger = setup_logger("GUILogger")
+        self.logger.info("GUI Started")
  
         # Window Config
         self.title("Google Maps Scraper Pro")
