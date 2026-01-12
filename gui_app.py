@@ -63,6 +63,7 @@ class ScraperGUI(ctk.CTk):
         self.creds_file_path = ctk.StringVar(value=self.config.get("creds_file", "credentials.json"))
         self.max_results_var = ctk.StringVar(value=self.config.get("max_results", "100"))
         self.headless_var = ctk.BooleanVar(value=self.config.get("headless", True))
+        self.csv_export_var = ctk.BooleanVar(value=self.config.get("export_csv", True))
         
         self.sheet_behavior_var = ctk.StringVar(value=self.config.get("sheet_behavior", "Append"))
         self.max_scroll_time_var = ctk.StringVar(value=self.config.get("max_scroll_time", "300"))
@@ -228,6 +229,7 @@ class ScraperGUI(ctk.CTk):
         add_section("General Config")
         add_field("Max Results / Query:", self.max_results_var)
         add_switch("Headless Mode (Background)", self.headless_var)
+        add_switch("Export to CSV Files", self.csv_export_var)
         
         # Files
         add_section("File Paths")
@@ -323,6 +325,7 @@ class ScraperGUI(ctk.CTk):
             "creds_file": self.creds_file_path.get(),
             "max_results": self.max_results_var.get(),
             "headless": self.headless_var.get(),
+            "export_csv": self.csv_export_var.get(),
         })
 
         args = {
@@ -330,6 +333,7 @@ class ScraperGUI(ctk.CTk):
             "creds_file": self.creds_file_path.get(),
             "total": int(self.max_results_var.get()) if self.max_results_var.get().isdigit() else 0,
             "headless": self.headless_var.get(),
+            "export_csv": self.csv_export_var.get(),
             "sheet_behavior": self.sheet_behavior_var.get(),
             "max_scroll_time": int(self.max_scroll_time_var.get()),
             "scroll_wait": int(self.scroll_wait_var.get()),
@@ -366,6 +370,7 @@ class ScraperGUI(ctk.CTk):
                 creds_file=args["creds_file"],
                 total=args["total"],
                 headless=args["headless"],
+                export_csv=args["export_csv"],
                 controller=self.controller,
                 sheet_behavior=args["sheet_behavior"],
                 max_scroll_time=args["max_scroll_time"],
@@ -545,6 +550,7 @@ class ScraperGUI(ctk.CTk):
             "creds_file": self.creds_file_path.get(),
             "max_results": self.max_results_var.get(),
             "headless": self.headless_var.get(),
+            "export_csv": self.csv_export_var.get(),
             "sheet_behavior": self.sheet_behavior_var.get(),
             "max_scroll_time": self.max_scroll_time_var.get(),
             "scroll_wait": self.scroll_wait_var.get(),

@@ -14,7 +14,8 @@ class ConfigManager:
         "sheet_behavior": "Append",  # Options: Append, Overwrite, New Sheet
         "max_scroll_time": "300",     # Seconds
         "max_scroll_retries": "5",
-        "theme": "Dark"
+        "theme": "Dark",
+        "export_csv": True            # Export data to CSV files
     }
 
     def __init__(self, config_file="config.json"):

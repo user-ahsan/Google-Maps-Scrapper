@@ -14,7 +14,7 @@ from src import db
 from src.job_manager import JobManager
 from src.leads_scrapping import scrape_data # Import directly or ensure it's available
 
-def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, headless=True, controller=None, sheet_behavior="Append", max_scroll_time=300, max_retries=5, resume=False, stats_queue=None, scroll_wait=3000):
+def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, headless=True, export_csv=True, controller=None, sheet_behavior="Append", max_scroll_time=300, max_retries=5, resume=False, stats_queue=None, scroll_wait=3000):
     """
     Entry point for the GUI to run the scraper.
     """
@@ -155,8 +155,12 @@ def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, 
                 # Save
                 print("Saving results...", end=" ")
                 db_count = business_list.save_to_db()
-                business_list.save_to_csv(search_for)
                 print(f"Local (+{db_count})", end=" ")
+                
+                # Conditionally save to CSV
+                if export_csv:
+                    business_list.save_to_csv(search_for)
+                    print("| CSV ✓", end=" ")
                 
                 if online_mode and worksheet:
                     df = business_list.dataframe()
