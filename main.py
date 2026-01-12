@@ -3,6 +3,7 @@ from playwright.sync_api import sync_playwright
 import argparse
 import os
 import sys
+from fake_useragent import UserAgent
 
 # Import Refactored Modules
 try:
@@ -72,17 +73,29 @@ def sync_offline_data(sheets_client):
         print("   Could not access worksheet for sync.")
         return
 
+    print(f"   Synced with Sheets. Local file used.")
+
+    # We use a FileLock here to prevent multiple scraper instances from 
+    # trying to sync the SAME large CSV to Sheets at the exact same startup time.
+    lock_path = os.path.join(base_dir, 'sync.lock')
+    
     try:
-        import pandas as pd
-        df = pd.read_csv(target_csv)
-        if df.empty:
-            print("   File is empty.")
-            return
-        
-        print(f"   Syncing {os.path.basename(target_csv)}...", end=" ")
-        added, dupe = sheets_utils.upload_data_to_sheet(worksheet, df)
-        print(f"Done. (+{added}, {dupe} dupes)")
-        
+        print("   🔒 Acquiring sync lock...", end=" ")
+        with sheets_utils.FileLock(lock_path, timeout=5):
+            print("Acquired.")
+            
+            import pandas as pd
+            df = pd.read_csv(target_csv)
+            if df.empty:
+                print("   File is empty.")
+                return
+            
+            print(f"   Syncing {os.path.basename(target_csv)}...", end=" ")
+            added, dupe = sheets_utils.upload_data_to_sheet(worksheet, df)
+            print(f"Done. (+{added}, {dupe} dupes)")
+            
+    except sheets_utils.TimeoutError:
+         print("\n   ⚠️  Could not acquire sync lock (Another instance is syncing?). Skipping sync.")
     except Exception as e:
         print(f"   Error syncing {target_csv}: {e}")
 
@@ -162,8 +175,16 @@ def main():
     # 3. Start Orchestration
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not args.headed)
-        # User agent to ensure standard desktop view (fixes missing review counts)
-        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        browser = p.chromium.launch(headless=not args.headed)
+        
+        # Dynamic User Agent
+        try:
+            ua = UserAgent().random
+            print(f"   🕵️  User-Agent: {ua}")
+        except:
+             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+             print(f"   🕵️  User-Agent: {ua} (Fallback)")
+
         page = browser.new_page(locale="en-GB", user_agent=ua)
 
         page.goto("https://www.google.com/maps", timeout=20000)

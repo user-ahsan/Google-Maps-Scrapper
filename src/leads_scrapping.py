@@ -261,8 +261,13 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                     if el.count() > 0:
                         return el.first.inner_text(timeout=1000).strip()
                 except Exception as e:
+                    # Log warning for ALL failures, not just required ones, but keep it clean
                     if required:
                          print(f"         ⚠️ Failed to extract {label}: {e}")
+                    else:
+                         # Optional Debug Log
+                         # print(f"         ⚠️ (Optional) Failed to extract {label}")
+                         pass
                 return ""
 
             # Extract Data

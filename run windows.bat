@@ -48,6 +48,13 @@ IF NOT EXIST "venv" (
     echo [!] Virtual environment not found. Creating it...
     GOTO FIX_ENV
 )
+REM Check for Playwright Browsers (Simple existence check for Windows)
+REM default location %USERPROFILE%\AppData\Local\ms-playwright
+IF NOT EXIST "%USERPROFILE%\AppData\Local\ms-playwright" (
+    echo [!] Playwright browsers not found. Installing...
+    call venv\Scripts\activate.bat
+    playwright install chromium
+)
 EXIT /B 0
 
 :RUN_MANUAL
