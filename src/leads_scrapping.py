@@ -112,9 +112,9 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
              break
         
         # 2. Specific Class Marker (Google sometimes uses this)
-        if page.locator('span.HlvSq').count() > 0: 
-            print(f"   ✅ Reached end of list (Marker).")
-            break
+        # REMOVED: span.HlvSq is brittle.
+        # check for "You've reached the end of the list" text in other variations if needed
+        # For now, relying on the generic text check above is safer.
 
         # Scroll
         if page.locator(feed_selector).count() > 0:
@@ -277,14 +277,16 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 business.name = check_name or "Unknown"
 
             # Address - Look for button with parsing data-item-id="address"
+            # Removed brittle 'div[class*="fontBodyMedium"]' dependency. Using .first or smarter lookups.
+            # Usually the text is the direct child or inside a structured div we can just grab text from.
             business.address = safe_extract(
-                lambda p: p.locator('button[data-item-id="address"]').locator('div[class*="fontBodyMedium"]'), 
+                lambda p: p.locator('button[data-item-id="address"]'), 
                 "Address"
             )
 
             # Website - Look for data-item-id="authority"
             web_text = safe_extract(
-                lambda p: p.locator('a[data-item-id="authority"]').locator('div[class*="fontBodyMedium"]'), 
+                lambda p: p.locator('a[data-item-id="authority"]'), 
                 "Website"
             )
             if web_text:
@@ -293,7 +295,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             
             # Phone - Look for data-item-id="phone:tel:"
             business.phone_number = safe_extract(
-                 lambda p: p.locator('button[data-item-id*="phone:tel:"]').locator('div[class*="fontBodyMedium"]'),
+                 lambda p: p.locator('button[data-item-id*="phone:tel:"]'),
                  "Phone"
             )
             

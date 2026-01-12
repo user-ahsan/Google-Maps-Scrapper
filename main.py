@@ -137,9 +137,15 @@ def main():
     known_names_sheet = set()
     known_names_local = set()
     
-    # 1. Local Data (Always Load)
-    print("   🧠 Loading Local DB for deduplication...", end=" ")
-    known_names_local = sheets_utils.get_all_known_names(None, local_dir='GMaps Data')
+    # 1. Local Data (DB init)
+    print("   🧠 Initializing Local Database...", end=" ")
+    from src import db
+    db.init_db()
+    # Migration Check
+    csv_path = os.path.join('GMaps Data', 'Gmaps Leads.csv')
+    db.import_csv_if_empty(csv_path)
+    
+    known_names_local = db.get_known_names()
     print(f"[{len(known_names_local)} records]")
 
     # 2. Online Data (If Online)
@@ -191,8 +197,8 @@ def main():
         
         page.goto("https://www.google.com/maps", timeout=20000)
         
-        try:
-            for index, search_for in enumerate(search_list):
+        for index, search_for in enumerate(search_list):
+            try:
                 print(f"\n-----\n🔎 Processing Query {index+1}/{len(search_list)}: {search_for}")
 
                 # REFACTORED CALL: Delegate scraping to module
@@ -202,7 +208,10 @@ def main():
                 # 1. Refresh Deduplication Data (Race Condition Fix)
                 # We load this PER QUERY to ensure we know about data added by other instances/threads.
                 print("   🔄 Refreshing local/online data for deduplication...", end=" ")
-                known_names_local = sheets_utils.get_all_known_names(None, local_dir='GMaps Data')
+                
+                # [DB] Use DB for fast local lookups
+                from src import db
+                known_names_local = db.get_known_names()
                 
                 known_names_sheet = set()
                 existing_keys = set()
@@ -212,7 +221,7 @@ def main():
                      existing_keys = sheets_utils.get_existing_keys(worksheet)
                      known_names_sheet = sheets_utils.get_all_known_names(worksheet, local_dir=None)
                 
-                print(f"[Done. Local: {len(known_names_local)} | Online: {len(known_names_sheet)}]")
+                print(f"[Done. Local (DB): {len(known_names_local)} | Online: {len(known_names_sheet)}]")
 
                 # Scrape
                 business_list_obj = leads_scrapping.scrape_data(
@@ -225,10 +234,20 @@ def main():
                     auto_accept=not args.manual
                 )
                 
-                # Save to CSV (Always)
+                # Save to DB & CSV
+                # The business_list_obj.save_to_csv now might be deprecated or wrapped
+                # For now let's use the new db method in leads_scrapping or manually here?
+                # Ideally leads_scrapping returns the object, we save it.
+                
+                # We'll save to DB first
+                print(f"   💾 Saving to Local Database...", end=" ")
+                new_db_count = business_list_obj.save_to_db()
+                print(f"Done (+{new_db_count} new).")
+                
+                # Save to CSV (Export)
                 clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
                 csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
-                print(f"\n   💾 Saved to main DB: {csv_path}")
+                print(f"   📂 Exported to CSV: {csv_path}")
 
                 # Upload to Sheets (If Online)
                 if online_mode and worksheet:
@@ -239,9 +258,13 @@ def main():
                     except Exception as e:
                         print(f"Failed to upload: {e}")
 
-        except leads_scrapping.StopScrapingException:
-
-            print("\n🛑 Execution Interrupted by User (Shift+Q). Stopping queues.")
+            except leads_scrapping.StopScrapingException:
+                print("\n🛑 Execution Interrupted by User (Shift+Q). Stopping queues.")
+                break
+            except Exception as query_error:
+                print(f"\n❌ CRITICAL ERROR processing query '{search_for}': {query_error}")
+                print("   ⚠️  Skipping to next query to prevent crash...")
+                continue
         
         browser.close()
 

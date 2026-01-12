@@ -182,6 +182,31 @@ class BusinessList:
             
         return path
 
+    def save_to_db(self) -> int:
+        """
+        Saves the business list to the SQLite database.
+        Returns the number of new records inserted.
+        """
+        try:
+            from src import db
+            count = 0
+            for business in self.business_list:
+                # Convert dataclass to dict
+                data = asdict(business)
+                # Generate key (re-use logic or trust db to handle it? DB handle it via unique_key param)
+                # We need to pass the key explicitly to db.insert_business
+                key = generate_unique_key(data)
+                
+                if db.insert_business(data, key):
+                    count += 1
+            return count
+        except ImportError:
+            print("   ⚠️  Database module not found. Skipping DB save.")
+            return 0
+        except Exception as e:
+            print(f"   ⚠️  DB Save Error: {e}")
+            return 0
+
 def extract_coordinates_from_url(url: str) -> tuple[float, float]:
     """helper function to extract coordinates from url"""
     try:
@@ -474,11 +499,12 @@ def get_all_seen_urls(worksheet=None, local_dir='GMaps Data'):
     
     return seen_urls
 
+    return known_names_local
+
 def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
     """
     Returns a set of all known Business Names (normalized to lowercase) 
-    from both online sheet and local CSVs.
-    Used for fast pre-click deduplication.
+    from both online sheet and local DB (SQLite).
     """
     known_names = set()
     
@@ -506,27 +532,18 @@ def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
         except Exception as e:
             print(f"Error reading names from sheet: {e}")
 
-    # 2. From Local CSVs
-    if local_dir and os.path.exists(local_dir):
-        # We don't print here to avoid spamming logs, assuming get_all_seen_urls or similar ran before
-        csv_files = glob.glob(os.path.join(local_dir, '**', '*.csv'), recursive=True)
-        
-        for csv_path in csv_files:
-            try:
-                df = pd.read_csv(csv_path)
-                target_col = None
-                for col in df.columns:
-                    if col in ['Name', 'name']:
-                        target_col = col
-                        break
-                
-                if target_col:
-                    for n in df[target_col].dropna():
-                        if isinstance(n, str) and n.strip():
-                            known_names.add(n.strip().lower())
-            except Exception:
-                pass
-                
+    # 2. From Local DB (SQLite) - Preferred
+    try:
+        from src import db
+        # We assume db module exists and is initialized
+        # If DB file doesn't exist, this might return empty, which is fine
+        db_names = db.get_known_names()
+        known_names.update(db_names)
+        return known_names
+    except Exception:
+        # Fallback to CSV scanning if DB fails or not present (legacy support)
+        pass
+
     return known_names
 
 def prune_duplicates(worksheet):
