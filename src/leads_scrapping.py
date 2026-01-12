@@ -1,3 +1,4 @@
+# Made by user-ahsan
 import datetime
 from playwright.sync_api import sync_playwright
 
@@ -53,23 +54,38 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     print(f"   Optimization: Checking against {k_sheet} online and {k_local} local records.")
 
     # Robust Search Box Locator for A/B Testing
+    # Robust Search Box Locator for A/B Testing
     search_box = None
     selectors = [
-        '//input[@id="searchboxinput"]', 
-        '//input[@id="searchbox-input"]', 
-        '//input[@aria-label="Search Google Maps"]',
-        'input[name="q"]'
+        'input[name="q"]',
+        'input#searchboxinput', 
+        'input#searchbox-input', 
+        'input[aria-label="Search Google Maps"]',
     ]
     
-    for sel in selectors:
-        if page.locator(sel).count() > 0:
-            search_box = page.locator(sel).first
-            break
-            
+    print("   🔍 Waiting for search box...", end=" ", flush=True)
+    for _ in range(30): # Wait up to 30 seconds (checks every 1s)
+        for sel in selectors:
+            try:
+                if page.locator(sel).count() > 0 and page.locator(sel).is_visible():
+                    search_box = page.locator(sel).first
+                    print(f"Found ({sel})")
+                    break
+            except: pass
+        if search_box: break
+        page.wait_for_timeout(1000)
+
     if search_box:
-        search_box.fill(search_for)
+        try:
+            search_box.click()
+            search_box.fill(search_for)
+        except Exception as e:
+             print(f"\n   ❌ Error interacting with search box: {e}")
+             return BusinessList()
     else:
-        print("   ❌ CRITICAL: Could not find search box. Google layout might have changed.")
+        print("\n   ❌ CRITICAL: Could not find search box. Google layout might have changed.")
+        # Debug screenshot
+        # page.screenshot(path="debug_search_fail.png")
         return BusinessList()
         
     page.wait_for_timeout(2000)
@@ -196,13 +212,15 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 
                 # Granular Checks
                 if check_name:
+                    display_name = (listing_name[:30] + '..') if len(listing_name) > 30 else listing_name
+                    
                     if known_names_sheet and check_name in known_names_sheet:
-                        print(f"      ⏭️  Skipping '{listing_name}'".ljust(50) + "| [Found in Google Sheet]")
+                        print(f"   ⏭️ {display_name:<32} | [Found in Google Sheet]")
                         skipped_count += 1
                         continue
                     
                     if known_names_local and check_name in known_names_local:
-                        print(f"      ⏭️  Skipping '{listing_name}'".ljust(50) + "| [Found in Local DB]")
+                        print(f"   ⏭️ {display_name:<32} | [Found in Local DB]")
                         skipped_count += 1
                         continue
             
@@ -376,13 +394,15 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 is_new = False
             
             # --- BEAUTIFUL LOGGING ---
+            display_name = (business.name[:30] + '..') if len(business.name) > 30 else business.name
+            
             if is_new:
                 business_list.add_business(business)
-                # Helper to format count safely
                 r_count = f"({business.reviews_count})" if business.reviews_count else ""
-                print(f"      ✅  {business.name:<40} | 📞 {business.phone_number:<15} | ⭐ {business.reviews_average} {r_count}")
+                # Compact single line format
+                print(f"   ✅ {display_name:<32} | 📞 {business.phone_number:<15} | ⭐ {business.reviews_average} {r_count}")
             else:
-                 print(f"      ❌  {business.name:<40} | [DUPLICATE]")
+                 print(f"   ❌ {display_name:<32} | [DUPLICATE]")
             
         except Exception as e:
             print(f"      ⚠️  Error: {e}")

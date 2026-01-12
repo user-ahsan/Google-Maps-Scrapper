@@ -1,3 +1,4 @@
+# Made by user-ahsan
 import sqlite3
 import os
 import pandas as pd
@@ -15,6 +16,9 @@ def init_db():
     """Initializes the database table if it doesn't exist."""
     conn = get_db_connection()
     try:
+        # Enable WAL mode for better concurrency
+        conn.execute('PRAGMA journal_mode=WAL')
+        
         # We store the unique key (Name|Phone etc) directly for fast dedupe
         # and also store all other fields.
         conn.execute('''

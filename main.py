@@ -1,3 +1,4 @@
+# Made by user-ahsan
 import datetime
 from playwright.sync_api import sync_playwright
 import argparse
@@ -9,6 +10,7 @@ from fake_useragent import UserAgent
 try:
     from src import sheets_utils
     from src import leads_scrapping
+    from src import db
 except ImportError as e:
     print(f"CRITICAL ERROR: Could not import modules: {e}")
     sys.exit(1)
@@ -24,17 +26,35 @@ def run_diagnostics(force_offline=False):
     # 1. Browser Connectivity Test
     print("1. Testing Browser Environment (Headless)...", end=" ")
     browser_ready = False
-    try:
+    
+    def try_launch():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto("https://www.google.com", timeout=10000)
             browser.close()
+            
+    try:
+        try_launch()
         print("✅ PASS")
         browser_ready = True
     except Exception as e:
-        print(f"❌ FAIL\n   Error: {e}")
-        print("   -> Tip: Ensure Playwright is installed: 'playwright install chromium'")
+        print(f"\n   ⚠️  Browser Launch Failed: {e}")
+        print("   🛠️  Attempting to auto-install Playwright binaries...")
+        
+        try:
+            import subprocess
+            # Install chromium specifically to keep size down
+            subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+            print("   ✅ Installation complete. Retrying launch...")
+            
+            try_launch()
+            print("   ✅ PASS (Recovered)")
+            browser_ready = True
+            
+        except Exception as install_error:
+            print(f"   ❌ FATAL: Auto-install failed: {install_error}")
+            print("   -> Tip: Run 'playwright install chromium' manually.")
 
     # 2. Google Sheets Connectivity Test
     print("2. Testing Google Sheets Connection...", end=" ")
@@ -183,11 +203,14 @@ def main():
         browser = p.chromium.launch(headless=not args.headed)
         browser = p.chromium.launch(headless=not args.headed)
         
-        # Dynamic User Agent
+        # Dynamic User Agent (Enformed Desktop)
         try:
-            ua = UserAgent().random
+            # Force desktop to avoid mobile layouts which break selectors
+            ua = UserAgent(platforms='desktop').random
             print(f"   🕵️  User-Agent: {ua}")
         except:
+             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+             print(f"   🕵️  User-Agent: {ua} (Fallback)")
              ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
              print(f"   🕵️  User-Agent: {ua} (Fallback)")
 
@@ -210,7 +233,7 @@ def main():
                 print("   🔄 Refreshing local/online data for deduplication...", end=" ")
                 
                 # [DB] Use DB for fast local lookups
-                from src import db
+                # db imported at top-level
                 known_names_local = db.get_known_names()
                 
                 known_names_sheet = set()
@@ -245,9 +268,9 @@ def main():
                 print(f"Done (+{new_db_count} new).")
                 
                 # Save to CSV (Export)
-                clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
-                csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
-                print(f"   📂 Exported to CSV: {csv_path}")
+                # clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
+                # csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
+                # print(f"   📂 Exported to CSV: {csv_path}")
 
                 # Upload to Sheets (If Online)
                 if online_mode and worksheet:
