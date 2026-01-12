@@ -222,67 +222,75 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             # Instead of looking for a generic role, we look for the H1 (Business Name) 
             # and then scope to its parent container to ensure we rely on the specific open panel.
             
-            # 1. Wait for H1 (Validation of Load)
-            name_attribute = 'h1.DUwDvf' 
+            # 1. Wait for H1 (Business Name) - Robust Check
+            # We look for ANY h1 inside the main role, as class names change.
             try:
-                 # Wait globally first to ensure it's there
-                 page.wait_for_selector(name_attribute, timeout=3000)
-            except:
-                 # Try fallback H1
-                 try:
-                     page.locator('h1').first.wait_for(timeout=2000)
-                 except:
-                     print(f"      ⚠️  Skip: No details load for #{i+1}")
-                     continue
-
-            # 2. Define Scope (Crucial for correct Extraction)
-            # We assume the H1 is inside the Details Pane. 
-            # We'll use the specific H1 we found to anchor our search.
-            
-            details_pane = page # Default fallback
-            
-            # Try to find the specific container holding this H1
-            # Usually the details panel is a 'div[role="main"]' or has a specific class like 'm6QErb'
-            if page.locator('div[role="main"]').count() > 0:
-                # Gmaps often has multiple role="main" (e.g. Navigation, Search, Details)
-                # The Details one is usually the last one opened or has specific attributes.
-                # We iterate to find the one containing our target H1 (implicit or explicit check)
+                # Scoping: Try to find the details pane first
+                # The details pane usually has role="main" and contains an h1.
+                # We prioritize the last opened one (highest z-index usually)
+                candidates = page.locator('div[role="main"]').all()
+                details_pane = None
                 
-                # Heuristic: The one with the highest z-index or last in DOM is often the overlay.
-                # Let's try the Last one first.
-                details_pane = page.locator('div[role="main"]').last
-            
-            # Verify if H1 is inside this candidate `details_pane`
-            if details_pane.locator(name_attribute).count() == 0 and details_pane.locator('h1').count() == 0:
-                # If not found in the scoped pane, fallback to page (risky but necessary)
-                # But to avoid "Stuck Ratings" (grabbing list view items), we try to get the H1's parent
-                print("      ⚠️  Warning: Scoping issue. H1 not found in main pane. Using Page fallback.")
-                details_pane = page
+                # Check candidates in reverse (newest first)
+                for pane in reversed(candidates):
+                     if pane.locator('h1').count() > 0:
+                         details_pane = pane
+                         break
+                
+                if not details_pane:
+                    # Fallback to page if no specific pane found (e.g. mobile view or unique layout)
+                    details_pane = page
+                
+                # Verify H1 exists
+                details_pane.locator('h1').first.wait_for(timeout=3000)
+            except Exception as e:
+                print(f"      ⚠️  Skip: could not locate business details (H1 timeout). {e}")
+                continue
 
             business = Business()
             business.scraped_query = search_for
             business.scraped_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            def get_text(xpath):
-                try: return details_pane.locator(xpath).first.inner_text(timeout=2000).strip()
-                except: return ""
+            def safe_extract(locator_strategy, label, required=False):
+                """
+                Robust extraction with error logging.
+                locator_strategy: lambda using details_pane to find element
+                """
+                try:
+                    el = locator_strategy(details_pane)
+                    if el.count() > 0:
+                        return el.first.inner_text(timeout=1000).strip()
+                except Exception as e:
+                    if required:
+                         print(f"         ⚠️ Failed to extract {label}: {e}")
+                return ""
 
             # Extract Data
-            try:
-                if details_pane.locator(name_attribute).count() > 0:
-                    business.name = details_pane.locator(name_attribute).first.inner_text().strip()
-                elif details_pane.locator('h1').count() > 0:
-                    business.name = details_pane.locator('h1').first.inner_text().strip()
-            except: business.name = check_name or "Unknown"
+            # Name
+            business.name = safe_extract(lambda p: p.locator('h1'), "Name", required=True)
+            if not business.name:
+                business.name = check_name or "Unknown"
 
-            business.address = get_text('//button[@data-item-id="address"]//div[contains(@class, "fontBodyMedium")]')
-            
-            web_text = get_text('//a[@data-item-id="authority"]//div[contains(@class, "fontBodyMedium")]')
+            # Address - Look for button with parsing data-item-id="address"
+            business.address = safe_extract(
+                lambda p: p.locator('button[data-item-id="address"]').locator('div[class*="fontBodyMedium"]'), 
+                "Address"
+            )
+
+            # Website - Look for data-item-id="authority"
+            web_text = safe_extract(
+                lambda p: p.locator('a[data-item-id="authority"]').locator('div[class*="fontBodyMedium"]'), 
+                "Website"
+            )
             if web_text:
                 business.domain = web_text
-                business.website = f"https://www.{web_text}"
+                business.website = f"https://www.{web_text}" if not web_text.startswith('http') else web_text
             
-            business.phone_number = get_text('//button[contains(@data-item-id, "phone:tel:")]//div[contains(@class, "fontBodyMedium")]')
+            # Phone - Look for data-item-id="phone:tel:"
+            business.phone_number = safe_extract(
+                 lambda p: p.locator('button[data-item-id*="phone:tel:"]').locator('div[class*="fontBodyMedium"]'),
+                 "Phone"
+            )
             
             # Reviews Logic (Improved)
             business.reviews_average = None
@@ -290,59 +298,60 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             
             try:
                 # Method 1: Robust Aria Label Scan (Stars)
+                # Look for the stars aria label which is usually "X.X stars X Reviews" or similar
                 aria_selector = 'span[role="img"][aria-label*="stars"]'
                 
-                # Scan top 5 matches to find the one that likely belongs to the main header
-                count_candidates = details_pane.locator(aria_selector).count()
+                # We try to find the one closest to the top of the details pane
+                star_elements = details_pane.locator(aria_selector).all()
                 
-                for i in range(min(5, count_candidates)):
-                    lbl = details_pane.locator(aria_selector).nth(i).get_attribute('aria-label')
+                for el in star_elements[:3]: # Check top 3
+                    lbl = el.get_attribute('aria-label')
                     if not lbl: continue
                     
                     import re
-                    # Example: "4.8 stars 153 Reviews" (Old format) or just "4.6 stars" (New format)
+                    # Patterns to extract "4.8" and "153"
                     rating_match = re.search(r'(\d+(\.\d+)?) stars', lbl)
-                    count_match = re.search(r'([\d,]+)\s+Review', lbl, re.IGNORECASE)
                     
                     if rating_match:
-                         # Prioritize updating rating if found
                          if not business.reviews_average:
                              business.reviews_average = float(rating_match.group(1))
 
-                    if count_match:
-                         business.reviews_count = int(count_match.group(1).replace(',', ''))
-                         break 
-                
-                # Method 1.5: Specific Review Count Element (New Google Maps Layout)
-                # Found span[role="img" aria-label="113 reviews"] which is separate from stars
-                if not business.reviews_count:
-                    # Scan for any img role with "reviews" in label
-                    review_spans = details_pane.locator('span[role="img"][aria-label*="reviews"]').all()
-                    for span in review_spans[:3]: # check first few
-                        lbl = span.get_attribute('aria-label')
-                        # "113 reviews"
-                        c_match = re.search(r'([\d,]+)\s+reviews', lbl, re.IGNORECASE)
-                        if c_match:
-                            business.reviews_count = int(c_match.group(1).replace(',', ''))
-                            break
+                    # Sometimes the count is in the same label, sometimes separate.
+                    # If we found stars, look for "X Reviews" in text neighbors or siblings
+                    # But often Google has a separate span for count now.
                     
-                    # Method 1.6: Parens text fallback (e.g. "(113)") next to stars
-                    # Sometimes no aria-label, but text is "(113)"
-                    if not business.reviews_count and business.reviews_average:
-                        # Try to find text matching (\d+) near the rating
-                        # This is harder to target precisely, so we rely on checks above mostly.
-                        pass
-
-                # Method 2: Button Text Fallback (Specific for Count - e.g. "123 Reviews" button)
+                # Method 2: Explicit Review Count (often in a button or span with "reviews")
+                # We look for text strictly matching number + "reviews" in appropriate container
                 if not business.reviews_count:
-                    btn_xpath = '//button[contains(@aria-label, "Reviews")]'
-                    if details_pane.locator(btn_xpath).count() > 0:
-                        lbl = details_pane.locator(btn_xpath).first.get_attribute('aria-label')
+                    # Look for button or span with specific text pattern
+                    # "1,234 reviews" or "(1,234)"
+                    
+                    # 2a. Button check (common across layouts)
+                    reviews_btn_lbl = safe_extract(
+                        lambda p: p.locator('div[role="button"][aria-label*="reviews"]'), 
+                        "Reviews Button Label"
+                    ) # This gives text, but we want aria-label often.
+                    
+                    # Let's iterate elements with "reviews" in aria-label
+                    candidates = details_pane.locator('[aria-label*="reviews"]').all()
+                    for c in candidates[:5]:
+                        lbl = c.get_attribute('aria-label')
                         count_match = re.search(r'([\d,]+)\s+Review', lbl, re.IGNORECASE)
                         if count_match:
                             business.reviews_count = int(count_match.group(1).replace(',', ''))
-            except Exception: 
-                pass
+                            break
+                            
+                # Method 3: Fallback specific text extraction for count
+                if not business.reviews_count and business.reviews_average:
+                    # Try to find the text explicitly
+                    # Often looks like: "4.8 (1,234)"
+                    full_text = safe_extract(lambda p: p.locator('div[role="main"]'), "Full Text") # costly?
+                    # No, let's look for known container classes or structure if possible.
+                    # But since we want to avoid classes, let's rely on the stars element sibling.
+                    pass 
+
+            except Exception as e: 
+                print(f"         ⚠️ Reviews Extraction Error: {e}")
 
             business.category = search_for.split(' in ')[0].strip()
             business.location = search_for.split(' in ')[-1].strip()

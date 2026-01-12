@@ -73,6 +73,52 @@ class Business:
         
         return hash(tuple(hash_fields))
 
+import sys
+import time
+if sys.platform != 'win32':
+    import fcntl
+else:
+    import msvcrt
+
+class FileLock:
+    """Simple cross-platform file locking."""
+    def __init__(self, filename, timeout=10):
+        self.filename = filename 
+        self.timeout = timeout
+        self.handle = None
+        self.lock_file = f"{filename}.lock"
+
+    def __enter__(self):
+        # Create lock file if not exists
+        if not os.path.exists(os.path.dirname(self.lock_file)):
+             os.makedirs(os.path.dirname(self.lock_file), exist_ok=True)
+             
+        self.handle = open(self.lock_file, 'w')
+        start_time = time.time()
+        while True:
+            try:
+                if sys.platform == 'win32':
+                    # Lock first byte
+                    msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (IOError, OSError):
+                if time.time() - start_time > self.timeout:
+                    raise TimeoutError(f"Could not acquire lock for {self.filename} after {self.timeout}s")
+                time.sleep(0.1)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if sys.platform == 'win32':
+                msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(self.handle, fcntl.LOCK_UN)
+        except:
+            pass # Handle already closed
+        self.handle.close()
+
 @dataclass
 class BusinessList:
     """holds list of Business objects,
@@ -100,7 +146,7 @@ class BusinessList:
 
     def save_to_csv(self, filename) -> str:
         """saves pandas dataframe to csv file. Returns path.
-        Appends to existing file if present.
+        Appends to existing file if present. Safe with File Locking.
         """
         os.makedirs(self.save_at, exist_ok=True)
         # FORCE filename to 'Gmaps Leads' regardless of input to enforce single file
@@ -125,8 +171,15 @@ class BusinessList:
             # Filter
             df = df[EXPECTED_HEADERS]
         
-        header = not os.path.exists(path)
-        df.to_csv(path, index=False, mode='a', header=header)
+        # USE LOCK for safe append
+        with FileLock(path):
+            header = not os.path.exists(path)
+            # Check if file is empty even if exists
+            if os.path.exists(path) and os.path.getsize(path) == 0:
+                header = True
+                
+            df.to_csv(path, index=False, mode='a', header=header)
+            
         return path
 
 def extract_coordinates_from_url(url: str) -> tuple[float, float]:

@@ -178,12 +178,21 @@ def main():
                 # We pass existing keys helper if needed, but scrape_data mainly returns a list.
                 # Real-time dedupe in scrape_data requires keys.
                 
+                # 1. Refresh Deduplication Data (Race Condition Fix)
+                # We load this PER QUERY to ensure we know about data added by other instances/threads.
+                print("   🔄 Refreshing local/online data for deduplication...", end=" ")
+                known_names_local = sheets_utils.get_all_known_names(None, local_dir='GMaps Data')
+                
+                known_names_sheet = set()
                 existing_keys = set()
+                
                 if online_mode and worksheet:
-                     print("   Fetching real-time existing records for deduplication...")
+                     # print("Fetching real-time existing records...")
                      existing_keys = sheets_utils.get_existing_keys(worksheet)
+                     known_names_sheet = sheets_utils.get_all_known_names(worksheet, local_dir=None)
+                
+                print(f"[Done. Local: {len(known_names_local)} | Online: {len(known_names_sheet)}]")
 
-                # Scrape
                 # Scrape
                 business_list_obj = leads_scrapping.scrape_data(
                     page, 
