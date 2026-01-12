@@ -4,13 +4,19 @@ from playwright.sync_api import sync_playwright
 import argparse
 import os
 import sys
-from fake_useragent import UserAgent
+import subprocess
+
+try:
+    from fake_useragent import UserAgent
+except ImportError:
+    UserAgent = None
 
 # Import Refactored Modules
 try:
     from src import sheets_utils
     from src import leads_scrapping
     from src import db
+    # from src import resource_utils # Optional utility
 except ImportError as e:
     print(f"CRITICAL ERROR: Could not import modules: {e}")
     sys.exit(1)
@@ -127,7 +133,31 @@ def main():
     parser.add_argument("-headed", "--headed", action="store_true", help="Run with browser visible")
     parser.add_argument("-m", "--manual", action="store_true", help="Enable manual verification prompt")
     parser.add_argument("-offline", "--offline", action="store_true", help="Force offline mode (Skip Sheets Sync)")
+    # NEW: Internal flag for self-installing browsers
+    parser.add_argument("--install-browsers", action="store_true", help="INTERNAL: Run browser installer and exit")
+    
     args = parser.parse_args()
+
+    # --- SPECIAL MODE: BROWSER INSTALLATION ---
+    if args.install_browsers:
+        print(">>> STARTING INTERNAL BROWSER INSTALLER...")
+        try:
+            # If we are frozen, we must import playwright.__main__ and run it.
+            if getattr(sys, 'frozen', False):
+                from playwright.__main__ import main as pw_main
+                # Hack sys.argv to be what playwright expects
+                sys.argv = ["playwright", "install", "chromium"]
+                pw_main()
+            else:
+                # In development, just run the command
+                subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+                
+            print(">>> INSTALLATION SUCCESSFUL")
+            sys.exit(0)
+        except Exception as e:
+            print(f">>> INSTALLATION FAILED: {e}")
+            sys.exit(1)
+    # ------------------------------------------
 
     # 1. Run Diagnostics
     browser_ok, sheets_client, online_mode = run_diagnostics(force_offline=args.offline)
@@ -203,16 +233,18 @@ def main():
         browser = p.chromium.launch(headless=not args.headed)
         browser = p.chromium.launch(headless=not args.headed)
         
-        # Dynamic User Agent (Enformed Desktop)
-        try:
-            # Force desktop to avoid mobile layouts which break selectors
-            ua = UserAgent(platforms='desktop').random
-            print(f"   🕵️  User-Agent: {ua}")
-        except:
-             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-             print(f"   🕵️  User-Agent: {ua} (Fallback)")
-             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-             print(f"   🕵️  User-Agent: {ua} (Fallback)")
+        # Dynamic User Agent (Robust Fallback)
+        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        if UserAgent:
+            try:
+                # Force desktop to avoid mobile layouts which break selectors
+                ua_gen = UserAgent(platforms='desktop')
+                ua = ua_gen.random
+                print(f"   🕵️  User-Agent: {ua}")
+            except Exception as e:
+                 print(f"   🕵️  User-Agent: {ua} (Fallback - Generator Error: {e})")
+        else:
+            print(f"   🕵️  User-Agent: {ua} (Fixed - Library Missing)")
 
         page = browser.new_page(locale="en-GB", user_agent=ua)
 

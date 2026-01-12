@@ -37,23 +37,18 @@ class StopScrapingException(Exception):
     """Raised when the user wants to stop the entire scraping process."""
     pass
 
-def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False):
+def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False, controller=None, max_scroll_time=300, max_retries=5):
     """
     Scrapes data for a single query using the provided Playwright page.
-    Args:
-        existing_keys: set of 'Name|Phone' keys for final check.
-        known_names_sheet: set of simplified lowercase names from Online Sheet.
-        known_names_local: set of simplified lowercase names from Local CSVs.
     """
     print(f"\n🚀 STARTED SCRAPING: {search_for}")
-    print(f"   Target: {total} leads")
+    print(f"   Target: {total} leads | Limit: {max_scroll_time}s")
     
     # Combined stats for log
     k_sheet = len(known_names_sheet) if known_names_sheet else 0
     k_local = len(known_names_local) if known_names_local else 0
     print(f"   Optimization: Checking against {k_sheet} online and {k_local} local records.")
 
-    # Robust Search Box Locator for A/B Testing
     # Robust Search Box Locator for A/B Testing
     search_box = None
     selectors = [
@@ -84,8 +79,6 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
              return BusinessList()
     else:
         print("\n   ❌ CRITICAL: Could not find search box. Google layout might have changed.")
-        # Debug screenshot
-        # page.screenshot(path="debug_search_fail.png")
         return BusinessList()
         
     page.wait_for_timeout(2000)
@@ -103,7 +96,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
          print("   ⏩ Auto-accepting URL (Autonomous Mode)")
          page.wait_for_timeout(2000)
     else:
-         page.wait_for_timeout(3000) # Auto wait if not interactive
+         page.wait_for_timeout(3000) 
     # -------------------------
 
     # Check if results found
@@ -116,22 +109,23 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     previously_counted = 0
     feed_selector = 'div[role="feed"]'
     no_change_counter = 0
-    MAX_NO_CHANGE = 150 # Increased to ~5 mins for 10k lists 
+    MAX_NO_CHANGE = int(max_retries) # From config
     
+    start_time = time.time() # Start Timer
+
     # --- LIST COLLECTING LOOP ---
     print(f"   📜 Scrolling to load listings...")
     while True:
-        # Check for "End of list" - Robust Checks
-        # 1. Text based check (broad)
+        # Check Timeout
+        if (time.time() - start_time) > max_scroll_time:
+            print(f"   ⚠️  Time limit reached ({max_scroll_time}s). Proceeding with current list.")
+            break
+
+        # Check for "End of list"
         if page.locator('//*[contains(text(), "reached the end of the list")]').count() > 0:
              print(f"   ✅ Reached end of list.")
              break
         
-        # 2. Specific Class Marker (Google sometimes uses this)
-        # REMOVED: span.HlvSq is brittle.
-        # check for "You've reached the end of the list" text in other variations if needed
-        # For now, relying on the generic text check above is safer.
-
         # Scroll
         if page.locator(feed_selector).count() > 0:
             page.locator(feed_selector).evaluate("node => node.scrollTop += 10000")
@@ -196,6 +190,17 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     skipped_count = 0
     
     for i, listing in enumerate(listings):
+        # --- CONTROLLER CHECK ---
+        if controller:
+            if controller.is_stopped():
+                print("\n   🛑 STOP Signal Received. Exiting loop.")
+                break
+            
+            if controller.is_paused():
+                print(f"      ⏸️  Paused... Waiting for resume.", end='\r')
+                controller.check_pause() # This BLOCKS until resumed
+                print(f"      ▶️  Resumed!                   ")
+        # ------------------------
         try:
             # 1. OPTIMIZATION: Name Based Pre-Check
             # Try to get the name from aria-label or text BEFORE clicking

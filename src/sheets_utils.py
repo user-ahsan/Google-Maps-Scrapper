@@ -250,18 +250,48 @@ def connect_to_sheets(credentials_file=CREDENTIALS_FILE):
         print(f"Error connecting to sheets: {e}")
         return None
 
-def get_or_create_worksheet(client, sheet_name=SHEET_NAME, worksheet_title="Data 1"):
-    """Gets a worksheet by title, or creates it if it doesn't exist."""
+def get_or_create_worksheet(client, sheet_name=SHEET_NAME, worksheet_title="Data 1", behavior="Append"):
+    """
+    Gets a worksheet by title, or creates it if it doesn't exist.
+    Behavior:
+    - 'Append': Open existing or create if missing.
+    - 'Overwrite': Open existing, CLEAR content, add headers.
+    - 'New Sheet': Ignore worksheet_title, find next available 'Data X' and create it.
+    """
     try:
         spreadsheet = client.open(sheet_name)
+        
+        if behavior == "New Sheet":
+            # Find next available Data X
+            existing_titles = [ws.title for ws in spreadsheet.worksheets()]
+            i = 1
+            while f"Data {i}" in existing_titles:
+                i += 1
+            final_title = f"Data {i}"
+            ws = spreadsheet.add_worksheet(title=final_title, rows=1000, cols=20)
+            ws.append_row(EXPECTED_HEADERS)
+            print_sheet_status("CREATE", spreadsheet.title, spreadsheet.id, f"Created NEW sheet '{final_title}' (New Sheet Mode)")
+            return ws
+
+        # For Append or Overwrite, we try to get the specific title
         try:
             worksheet = spreadsheet.worksheet(worksheet_title)
             print_sheet_status("ACCESS", spreadsheet.title, spreadsheet.id, f"Opened worksheet '{worksheet_title}'")
+            
+            if behavior == "Overwrite":
+                print_sheet_status("CLEAR", spreadsheet.title, spreadsheet.id, f"Overwriting '{worksheet_title}'...")
+                worksheet.clear()
+                worksheet.append_row(EXPECTED_HEADERS)
+                
             return worksheet
+            
         except gspread.WorksheetNotFound:
             ws = spreadsheet.add_worksheet(title=worksheet_title, rows=1000, cols=20)
+            # Add headers for new sheet
+            ws.append_row(EXPECTED_HEADERS) 
             print_sheet_status("CREATE", spreadsheet.title, spreadsheet.id, f"Created new worksheet '{worksheet_title}'")
             return ws
+            
     except Exception as e:
         print(f"Error opening sheet: {e}")
         return None
