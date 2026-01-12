@@ -3,15 +3,17 @@ import sys
 import threading
 import queue
 import os
-import io
-import time
+import re
 import subprocess
 from tkinter import filedialog, messagebox
 import tkinter as tk
+
+# Core Modules
 from src.controller import ScraperController
 from src.config_manager import ConfigManager
 from src import resource_utils
 from src.logger import setup_logger
+from src.job_manager import JobManager
 
 # --- THEME SETUP ---
 ctk.set_appearance_mode("Dark")
@@ -19,7 +21,6 @@ ctk.set_default_color_theme("blue")
 
 # --- CONSTANTS ---
 PLAYWRIGHT_BROWSERS_PATH = resource_utils.get_browsers_path()
-# Ensure env var is set for the current process so playright sees it
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = PLAYWRIGHT_BROWSERS_PATH
 
 class TextRedirector(object):
@@ -29,7 +30,9 @@ class TextRedirector(object):
         self.tag = tag
  
     def write(self, str_val):
-        self.widget_queue.put(str_val)
+        # Strip ANSI codes for clean logs
+        clean_text = re.sub(r'\x1b\[[0-9;]*m', '', str_val)
+        self.widget_queue.put(clean_text)
         
     def flush(self):
         pass
@@ -42,22 +45,20 @@ class ScraperGUI(ctk.CTk):
         self.config_manager = ConfigManager()
         self.config = self.config_manager.load_config()
         self.logger = setup_logger("GUILogger")
-        self.logger.info("GUI Started")
- 
+        self.job_manager = JobManager()
+        
         # Window Config
         self.title("Google Maps Scraper Pro")
-        self.geometry("1000x850") # Slightly taller for new buttons
+        self.geometry("1100x800")
         
-        # Grid Layout
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
- 
-        # State Variables
+        # State
         self.controller = ScraperController()
         self.log_queue = queue.Queue()
+        self.stats_queue = queue.Queue() # New Queue
         self.scraper_thread = None
+        self.active_frame = None
         
-        # Variables bound to Config
+        # Variables
         self.input_file_path = ctk.StringVar(value=self.config.get("input_file", ""))
         self.creds_file_path = ctk.StringVar(value=self.config.get("creds_file", "credentials.json"))
         self.max_results_var = ctk.StringVar(value=self.config.get("max_results", "100"))
@@ -65,284 +66,384 @@ class ScraperGUI(ctk.CTk):
         
         self.sheet_behavior_var = ctk.StringVar(value=self.config.get("sheet_behavior", "Append"))
         self.max_scroll_time_var = ctk.StringVar(value=self.config.get("max_scroll_time", "300"))
+        self.scroll_wait_var = ctk.StringVar(value=self.config.get("scroll_wait", "3000")) # Default 3000ms
         self.max_retries_var = ctk.StringVar(value=self.config.get("max_scroll_retries", "5"))
- 
-        # --- UI CONSTRUCTION ---
+
+        # --- LAYOUT CONSTRUCTION ---
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+
         self.create_sidebar()
-        self.create_main_area()
+        self.create_pages()
         
-        # --- INITIALIZATION CHECKS ---
-        self.after(500, self.check_browsers_silent)
- 
+        # Initial View
+        self.select_frame("Dashboard")
+        
+        # Poll for logs
+        self.after(100, self.update_console)
+        
+        # Resume Check
+        self.after(1000, self.check_resume_state)
+
     def create_sidebar(self):
-        self.sidebar_frame = ctk.CTkFrame(self, width=280, corner_radius=0)
+        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(10, weight=1)
- 
+        self.sidebar_frame.grid_rowconfigure(5, weight=1)
+
         # Logo
         self.logo_label = ctk.CTkLabel(
             self.sidebar_frame, 
             text="GMap Scraper", 
             font=ctk.CTkFont(size=22, weight="bold"),
-            text_color="#FFFFFF" 
-        )
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
- 
-        # --- TABVIEW for Settings ---
-        self.settings_tabs = ctk.CTkTabview(self.sidebar_frame, width=250, height=500) # Taller
-        self.settings_tabs.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-        
-        self.tab_general = self.settings_tabs.add("General")
-        self.tab_advanced = self.settings_tabs.add("Advanced")
-        
-        # --- GENERAL TAB ---
-        self.create_general_tab()
-        
-        # --- ADVANCED TAB ---
-        self.create_advanced_tab()
- 
-        # --- CONTROLS ---
-        self.create_control_section()
- 
-    def create_general_tab(self):
-        # Helper for consistency
-        def label(text, row):
-            l = ctk.CTkLabel(self.tab_general, text=text, anchor="w", text_color="#DDDDDD", font=("Arial", 12, "bold"))
-            l.grid(row=row, column=0, padx=10, pady=(10, 0), sticky="w")
-            return l
- 
-        # Input File
-        label("Input Queries File:", 0)
-        self.input_entry = ctk.CTkEntry(self.tab_general, textvariable=self.input_file_path, placeholder_text="Select input.txt...")
-        self.input_entry.grid(row=1, column=0, padx=10, pady=(0, 5), sticky="ew")
-        ctk.CTkButton(self.tab_general, text="Browse", width=80, command=self.browse_input).grid(row=2, column=0, padx=10, sticky="e")
- 
-        # Credentials
-        label("Credentials JSON:", 3)
-        self.creds_entry = ctk.CTkEntry(self.tab_general, textvariable=self.creds_file_path, placeholder_text="credentials.json")
-        self.creds_entry.grid(row=4, column=0, padx=10, pady=(0, 5), sticky="ew")
-        ctk.CTkButton(self.tab_general, text="Browse", width=80, command=self.browse_creds).grid(row=5, column=0, padx=10, sticky="e")
- 
-        # Max Results
-        label("Max Results (per query):", 6)
-        self.max_results_entry = ctk.CTkEntry(self.tab_general, textvariable=self.max_results_var, placeholder_text="e.g. 100")
-        self.max_results_entry.grid(row=7, column=0, padx=10, pady=(0, 5), sticky="ew")
- 
-        # Headless Toggle
-        self.headless_switch = ctk.CTkSwitch(
-            self.tab_general, 
-            text="Headless Mode (Background)", 
-            variable=self.headless_var, 
-            onvalue=True, 
-            offvalue=False,
-            text_color="#EEEEEE"
-        )
-        self.headless_switch.grid(row=8, column=0, padx=10, pady=20, sticky="w")
- 
-    def create_advanced_tab(self):
-        def label(text, row):
-            l = ctk.CTkLabel(self.tab_advanced, text=text, anchor="w", text_color="#DDDDDD", font=("Arial", 12, "bold"))
-            l.grid(row=row, column=0, padx=10, pady=(10, 0), sticky="w")
- 
-        # Sheet Behavior
-        label("Sheet Saving Behavior:", 0)
-        self.sheet_behavior_menu = ctk.CTkOptionMenu(
-            self.tab_advanced,
-            values=["Append", "Overwrite", "New Sheet"],
-            variable=self.sheet_behavior_var
-        )
-        self.sheet_behavior_menu.grid(row=1, column=0, padx=10, pady=(0, 5), sticky="ew")
-        
-        # Max Scroll Time
-        label("Max Scroll Time (seconds):", 2)
-        self.scroll_time_entry = ctk.CTkEntry(self.tab_advanced, textvariable=self.max_scroll_time_var)
-        self.scroll_time_entry.grid(row=3, column=0, padx=10, pady=(0, 5), sticky="ew")
-        
-        # Max Retries
-        label("Max Scroll Retries:", 4)
-        self.max_retries_entry = ctk.CTkEntry(self.tab_advanced, textvariable=self.max_retries_var)
-        self.max_retries_entry.grid(row=5, column=0, padx=10, pady=(0, 5), sticky="ew")
- 
-        # Browser Tools
-        label("System Tools:", 7)
-        
-        # 1. Install Browsers
-        self.btn_install = ctk.CTkButton(
-            self.tab_advanced, 
-            text="Re-Install Browsers & Fix", 
-            command=self.install_browsers_gui,
-            fg_color="#555555",
-            hover_color="#333333"
-        )
-        self.btn_install.grid(row=8, column=0, padx=10, pady=(5, 5), sticky="ew")
-
-        # 2. Run Diagnostics
-        self.btn_diag = ctk.CTkButton(
-            self.tab_advanced, 
-            text="Run System Diagnostics", 
-            command=self.run_diagnostics_gui,
-            fg_color="#4444aa",
-            hover_color="#333399"
-        )
-        self.btn_diag.grid(row=9, column=0, padx=10, pady=(5, 5), sticky="ew")
-
-        # 3. Open Data Folder
-        self.btn_open_data = ctk.CTkButton(
-            self.tab_advanced, 
-            text="Open Data Folder", 
-            command=self.open_data_folder,
-            fg_color="#333333",
-            hover_color="#111111"
-        )
-        self.btn_open_data.grid(row=10, column=0, padx=10, pady=(5, 5), sticky="ew")
-
- 
-    def create_control_section(self):
-        # Frame at bottom of sidebar
-        self.control_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.control_frame.grid(row=10, column=0, padx=20, pady=20, sticky="ew")
-        
-        self.btn_start = ctk.CTkButton(
-            self.control_frame, 
-            text="START SCRAPING", 
-            command=self.start_scraping, 
-            fg_color="#2CC985", 
-            text_color="white",
-            hover_color="#229966",
-            height=40,
-            font=("Arial", 14, "bold")
-        )
-        self.btn_start.pack(fill="x", pady=(0, 10))
- 
-        self.btn_pause = ctk.CTkButton(
-            self.control_frame, 
-            text="PAUSE", 
-            command=self.toggle_pause, 
-            state="disabled", 
-            fg_color="#FFA500", 
-            text_color="white",
-            hover_color="#CC8400"
-        )
-        self.btn_pause.pack(fill="x", pady=(0, 10))
-
-        self.btn_skip = ctk.CTkButton(
-            self.control_frame, 
-            text="SKIP ITEM", 
-            command=self.skip_item, 
-            state="disabled", 
-            fg_color="#3388FF", 
-            text_color="white",
-            hover_color="#0066CC"
-        )
-        self.btn_skip.pack(fill="x", pady=(0, 10))
- 
-        self.btn_stop = ctk.CTkButton(
-            self.control_frame, 
-            text="STOP", 
-            command=self.stop_scraping, 
-            state="disabled", 
-            fg_color="#FF4444", 
-            text_color="white",
-            hover_color="#CC0000"
-        )
-        self.btn_stop.pack(fill="x")
- 
-    def create_main_area(self):
-        self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="#1E1E1E") # Darker BG
-        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
-        self.main_frame.grid_rowconfigure(1, weight=1)
-        self.main_frame.grid_columnconfigure(0, weight=1)
- 
-        # Header Frame
-        self.header_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 5))
-        
-        self.console_label = ctk.CTkLabel(
-            self.header_frame, 
-            text="Live Console Output", 
-            font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#FFFFFF"
         )
-        self.console_label.pack(side="left")
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 30))
+
+        # Nav Buttons
+        self.btn_dashboard = self.create_nav_button("📊 Dashboard", "Dashboard", 1)
+        self.btn_scrape = self.create_nav_button("🕸️ New Scrape", "Scrape", 2)
+        self.btn_settings = self.create_nav_button("⚙️ Settings", "Settings", 3)
+        self.btn_logs = self.create_nav_button("📝 Logs", "Logs", 4)
         
-        self.btn_copy = ctk.CTkButton(
-            self.header_frame,
-            text="Copy Output",
-            width=80,
-            height=24,
-            fg_color="#444444",
-            command=self.copy_console_output
+        # Status / Controls (Bottom)
+        self.controls_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        self.controls_frame.grid(row=6, column=0, padx=10, pady=20, sticky="ew")
+        
+        self.btn_stop = ctk.CTkButton(
+            self.controls_frame, 
+            text="STOP JOB",
+            fg_color="#FF4444", 
+            hover_color="#CC0000",
+            state="disabled",
+            command=self.stop_scraping
         )
-        self.btn_copy.pack(side="right")
- 
-        # Console (Rich Text)
-        self.console_box = ctk.CTkTextbox(
-            self.main_frame, 
-            width=600, 
-            font=("Consolas", 12),
-            text_color="#FFFFFF", # Default White
-            fg_color="#000000",
-            corner_radius=5
+        self.btn_stop.pack(fill="x")
+
+    def create_nav_button(self, text, value, row):
+        btn = ctk.CTkButton(
+            self.sidebar_frame,
+            text=text,
+            fg_color="transparent",
+            text_color=("gray90", "gray90"),
+            hover_color=("gray70", "gray30"),
+            anchor="w",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40,
+            command=lambda v=value: self.select_frame(v)
         )
-        self.console_box.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        btn.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
+        return btn
+
+    def create_pages(self):
+        # We create all frames and stack them, showing one at a time.
+        self.frames = {}
+        
+        # 1. Dashboard Frame
+        self.frames["Dashboard"] = self.create_dashboard_frame()
+        self.frames["Scrape"] = self.create_scrape_frame()
+        self.frames["Settings"] = self.create_settings_frame()
+        self.frames["Logs"] = self.create_logs_frame()
+        
+        for f in self.frames.values():
+            f.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
+
+    # --- PAGES ---
+    
+    def create_dashboard_frame(self):
+        f = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        
+        ctk.CTkLabel(f, text="Overview", font=("Arial", 28, "bold")).pack(pady=30, padx=40, anchor="w")
+        
+        stats_box = ctk.CTkFrame(f, fg_color="#333333", corner_radius=10)
+        stats_box.pack(pady=10, padx=40, fill="x")
+        
+        # Stats Grid
+        self.lbl_status = ctk.CTkLabel(stats_box, text="IDLE", font=("Arial", 20, "bold"), text_color="#2CC985")
+        self.lbl_status.pack(side="left", padx=30, pady=20)
+        
+        ctk.CTkLabel(stats_box, text="|", font=("Arial", 20)).pack(side="left", padx=10)
+        
+        self.lbl_leads = ctk.CTkLabel(stats_box, text="Leads: 0", font=("Arial", 20))
+        self.lbl_leads.pack(side="left", padx=30)
+        
+        return f
+
+    def create_scrape_frame(self):
+        f = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        
+        ctk.CTkLabel(f, text="New Scraping Job", font=("Arial", 28, "bold")).pack(pady=30, padx=40, anchor="w")
+        
+        # Input Area
+        ctk.CTkLabel(f, text="Enter Keywords (One per line):", font=("Arial", 14)).pack(padx=40, anchor="w")
+        self.txt_input = ctk.CTkTextbox(f, width=600, height=200, font=("Consolas", 14))
+        self.txt_input.pack(padx=40, pady=10, fill="x")
+        
+        # Actions
+        btn_box = ctk.CTkFrame(f, fg_color="transparent")
+        btn_box.pack(padx=40, pady=20, fill="x")
+        
+        self.btn_start = ctk.CTkButton(
+            btn_box, 
+            text="START SCRAPING", 
+            font=("Arial", 16, "bold"),
+            height=50,
+            fg_color="#2CC985",
+            hover_color="#229966",
+            command=self.start_scraping
+        )
+        self.btn_start.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        self.btn_resume_ui = ctk.CTkButton(
+            btn_box,
+            text="RESUME PREVIOUS",
+            font=("Arial", 16, "bold"),
+            height=50,
+            fg_color="#FFA500",
+            hover_color="#CC8400",
+            state="disabled", # Enabled if resume available
+            command=self.resume_scraping
+        )
+        self.btn_resume_ui.pack(side="left", fill="x", expand=True, padx=(10, 0))
+
+        return f
+
+    def create_settings_frame(self):
+        f = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
+        ctk.CTkLabel(f, text="Settings", font=("Arial", 28, "bold")).pack(pady=30, padx=40, anchor="w")
+        
+        # --- Form Helper ---
+        def add_section(title):
+            ctk.CTkLabel(f, text=title, font=("Arial", 16, "bold"), text_color="#2CC985").pack(pady=(20, 10), padx=40, anchor="w")
+
+        def add_field(label, var):
+            row = ctk.CTkFrame(f, fg_color="transparent")
+            row.pack(fill="x", padx=40, pady=5)
+            ctk.CTkLabel(row, text=label, width=150, anchor="w").pack(side="left")
+            ctk.CTkEntry(row, textvariable=var, width=300).pack(side="left")
+            
+        def add_switch(label, var):
+            ctk.CTkSwitch(f, text=label, variable=var).pack(padx=40, pady=10, anchor="w")
+
+        # General
+        add_section("General Config")
+        add_field("Max Results / Query:", self.max_results_var)
+        add_switch("Headless Mode (Background)", self.headless_var)
+        
+        # Files
+        add_section("File Paths")
+        
+        # Creds (Manual Browse)
+        r_creds = ctk.CTkFrame(f, fg_color="transparent")
+        r_creds.pack(fill="x", padx=40, pady=5)
+        ctk.CTkLabel(r_creds, text="Credentials JSON:", width=150, anchor="w").pack(side="left")
+        ctk.CTkEntry(r_creds, textvariable=self.creds_file_path, width=220).pack(side="left")
+        ctk.CTkButton(r_creds, text="Browse", width=70, command=self.browse_creds).pack(side="left", padx=10)
+
+        # Advanced
+        add_section("Advanced")
+        add_field("Max Scroll Time (s):", self.max_scroll_time_var)
+        add_field("Scroll Wait/Interval (ms):", self.scroll_wait_var)
+        add_field("Max Retries:", self.max_retries_var)
+        
+        ctk.CTkLabel(f, text="Sheet Behavior:", width=150, anchor="w").pack(padx=40, pady=(10,0), anchor="w")
+        ctk.CTkOptionMenu(f, values=["Append", "Overwrite", "New Sheet"], variable=self.sheet_behavior_var).pack(padx=40, pady=5, anchor="w")
+
+        # System Tools
+        add_section("System Tools")
+        ctk.CTkButton(f, text="Re-Install Browsers", command=self.install_browsers_gui, fg_color="#555555").pack(padx=40, pady=5, anchor="w")
+        ctk.CTkButton(f, text="Run Diagnostics", command=self.run_diagnostics_gui, fg_color="#4444aa").pack(padx=40, pady=5, anchor="w")
+        ctk.CTkButton(f, text="Open Data Folder", command=self.open_data_folder, fg_color="#333333").pack(padx=40, pady=5, anchor="w")
+
+        # Save Button
+        ctk.CTkButton(f, text="SAVE SETTINGS", command=self.save_settings, fg_color="#2CC985", height=40, font=("Arial", 14, "bold")).pack(padx=40, pady=30, anchor="w", fill="x")
+
+        return f
+
+    def create_logs_frame(self):
+        f = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        ctk.CTkLabel(f, text="System Logs", font=("Arial", 28, "bold")).pack(pady=30, padx=40, anchor="w")
+        
+        self.console_box = ctk.CTkTextbox(f, font=("Consolas", 12), text_color="#DDDDDD", fg_color="#111111", wrap="none")
+        self.console_box.pack(fill="both", expand=True, padx=40, pady=(0, 40))
         self.console_box.configure(state="disabled")
         
-        # Tags
+        # Tags - reused logic
         self.console_box._textbox.tag_config("error", foreground="#FF4444")
         self.console_box._textbox.tag_config("success", foreground="#00FF00")
         self.console_box._textbox.tag_config("warning", foreground="#FFA500")
-        self.console_box._textbox.tag_config("info", foreground="#00CCFF")
-        self.console_box._textbox.tag_config("normal", foreground="#FFFFFF")
- 
-        # Start Log Polling
-        self.after(100, self.update_console)
- 
-    # --- LOGIC & HANDLERS ---
+        
+        return f
+
+    # --- LOGIC ---
     
-    def save_current_settings(self):
-        data = {
-            "input_file": self.input_file_path.get(),
+    def select_frame(self, name):
+        self.active_frame = name
+        # Hide all
+        for f in self.frames.values():
+            f.grid_forget()
+        # Show selected
+        self.frames[name].grid(row=0, column=1, sticky="nsew")
+        
+        # Color Active Button
+        # (Simplified: Just resetting all colors would be better but keeping simple)
+        
+    def check_resume_state(self):
+        if self.job_manager.has_unfinished_job():
+            pending = self.job_manager.get_pending_queries()
+            count = len(pending)
+            self.log_to_console(f"Found unfinished job with {count} pending queries.")
+            self.btn_resume_ui.configure(state="normal", text=f"RESUME JOB ({count} pending)")
+            messagebox.showinfo("Resume Available", f"An interrupted job was found with {count} pending queries.\nGo to 'New Scrape' -> 'RESUME' to continue.")
+            
+    def start_scraping(self):
+        self.save_settings(silent=True) # Auto-save on start
+        
+        raw_text = self.txt_input.get("1.0", "end")
+        queries = [line.strip() for line in raw_text.splitlines() if line.strip()]
+        
+        if not queries:
+            messagebox.showerror("Error", "Please enter at least one keyword (one per line).")
+            return
+            
+        self.run_job(queries=queries, resume=False)
+
+    def resume_scraping(self):
+        self.run_job(resume=True)
+
+    def run_job(self, queries=None, resume=False):
+        # UI Lock
+        self.btn_start.configure(state="disabled")
+        self.btn_resume_ui.configure(state="disabled")
+        self.btn_stop.configure(state="normal")
+        
+        self.lbl_status.configure(text="RUNNING", text_color="#FFA500")
+        
+        # Config
+        self.config_manager.save_config({
             "creds_file": self.creds_file_path.get(),
             "max_results": self.max_results_var.get(),
             "headless": self.headless_var.get(),
+        })
+
+        args = {
+            "input_queries": queries,
+            "creds_file": self.creds_file_path.get(),
+            "total": int(self.max_results_var.get()) if self.max_results_var.get().isdigit() else 0,
+            "headless": self.headless_var.get(),
             "sheet_behavior": self.sheet_behavior_var.get(),
-            "max_scroll_time": self.max_scroll_time_var.get(),
-            "max_scroll_retries": self.max_retries_var.get()
+            "max_scroll_time": int(self.max_scroll_time_var.get()),
+            "scroll_wait": int(self.scroll_wait_var.get()),
+            "max_scroll_retries": int(self.max_retries_var.get()),
+            "resume": resume,
+            "stats_queue": self.stats_queue
         }
-        self.config_manager.save_config(data)
- 
-    def browse_input(self):
-        filename = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
-        if filename: 
-            self.input_file_path.set(filename)
-            self.save_current_settings()
- 
+        
+        self.select_frame("Dashboard") # Auto-switch to logs or Dashboard? User said hide logs.
+        # Let's switch to Dashboard but logs are background. 
+        # Actually user said "Hide by Default". So maybe stay on Dashboard.
+        # But we need feedback. I'll switch to Dashboard and rely on status label.
+        self.select_frame("Dashboard")
+        
+        # Start Thread
+        self.controller = ScraperController() 
+        self.scraper_thread = threading.Thread(target=self.run_scraper_logic, args=(args,))
+        self.scraper_thread.daemon = True 
+        self.scraper_thread.start()
+
+    def run_scraper_logic(self, args):
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        sys.stdout = TextRedirector(self.log_queue)
+        sys.stderr = TextRedirector(self.log_queue)
+        
+        try:
+            print("--- STARTING JOB ---")
+            import main_gui_wrapper 
+            
+            main_gui_wrapper.run_gui_mode(
+                input_queries=args.get("input_queries"),
+                # We can skip input_file if queries present
+                creds_file=args["creds_file"],
+                total=args["total"],
+                headless=args["headless"],
+                controller=self.controller,
+                sheet_behavior=args["sheet_behavior"],
+                max_scroll_time=args["max_scroll_time"],
+                scroll_wait=args["scroll_wait"],
+                resume=args["resume"],
+                stats_queue=args["stats_queue"]
+            )
+            print("--- JOB FINISHED ---")
+            self.after(0, lambda: self.lbl_status.configure(text="COMPLETED", text_color="#00FF00"))
+            
+        except Exception as e:
+            print(f"CRITICAL ERROR: {e}")
+            self.after(0, lambda: self.lbl_status.configure(text="ERROR", text_color="#FF4444"))
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            self.after(0, self.reset_ui_state)
+
+    def reset_ui_state(self):
+        self.btn_start.configure(state="normal")
+        self.btn_resume_ui.configure(state="disabled") # Check again?
+        self.btn_stop.configure(state="disabled")
+        # Check resume availability again
+        if self.job_manager.has_unfinished_job():
+             self.btn_resume_ui.configure(state="normal")
+
+    def stop_scraping(self):
+        if self.controller:
+            self.controller.stop()
+            self.log_to_console(">>> STOP SIGNAL SENT...")
+
+    # --- UTILS ---
+    def log_to_console(self, msg):
+        self.log_queue.put(str(msg) + "\n")
+
+    def update_console(self):
+        # 1. Process Logs
+        while not self.log_queue.empty():
+            msg = self.log_queue.get()
+            self.console_box.configure(state="normal")
+            
+            # Filter out \r messages to prevent spam, or handle them
+            if '\r' in msg:
+                continue # Skip progress bar logs in GUI console to keep it clean
+
+            tag = "normal"
+            lower = msg.lower()
+            if "error" in lower or "fail" in lower: tag = "error"
+            elif "success" in lower: tag = "success"
+            
+            self.console_box._textbox.insert("end", msg, (tag,))
+            self.console_box.see("end")
+            self.console_box.configure(state="disabled")
+            
+        # 2. Process Stats
+        while not self.stats_queue.empty():
+            stat = self.stats_queue.get()
+            if stat.get("type") == "stats_update":
+                leads = stat.get("total_leads", 0)
+                done = stat.get("completed", 0)
+                total = stat.get("total_queries", 0)
+                self.lbl_leads.configure(text=f"Leads: {leads}")
+                self.lbl_status.configure(text=f"RUNNING ({done}/{total})")
+
+        self.after(50, self.update_console)
+
     def browse_creds(self):
-        filename = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")])
-        if filename: 
-            self.creds_file_path.set(filename)
-            self.save_current_settings()
- 
-    def check_browsers_silent(self):
-        """Check if browsers exist on startup. Use persistent path."""
-        # Simple check: Does the folder exist and have content?
-        if not os.path.exists(PLAYWRIGHT_BROWSERS_PATH) or not os.listdir(PLAYWRIGHT_BROWSERS_PATH):
-            self.log_to_console("⚠️ Playwright browsers not found in persistent storage.")
-            self.log_to_console(f"   Path: {PLAYWRIGHT_BROWSERS_PATH}")
-            self.log_to_console("   Please go to Advanced > Re-Install Browsers.")
-        else:
-            self.log_to_console("✅ Playwright browsers found.")
+         filename = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")])
+         if filename: self.creds_file_path.set(filename)
 
     def open_data_folder(self):
-        """Opens the data folder in File Explorer."""
         folder = "GMaps Data"
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+        if not os.path.exists(folder): os.makedirs(folder)
         os.startfile(os.path.abspath(folder))
-        self.log_to_console(f"ℹ️ Opened Data Folder: {os.path.abspath(folder)}")
 
     def run_diagnostics_gui(self):
         """Run the diagnostics check in the main console."""
+        self.select_frame("Logs")
         self.log_to_console("\n--- RUNNING DIAGNOSTICS ---")
         
         def diag_thread():
@@ -351,11 +452,9 @@ class ScraperGUI(ctk.CTk):
                 original_stdout = sys.stdout
                 sys.stdout = TextRedirector(self.log_queue)
                 
-                # Import main and run diagnostics
-                # Since we are in the same process, we can just call it
-                # BUT we need to be careful about imports
+                # Use main from root
                 import main
-                main.run_diagnostics(force_offline=True) # Force offline to skip sheet sync time if just testing
+                main.run_diagnostics(force_offline=True) 
                 
                 print("--- DIAGNOSTICS COMPLETE ---")
             except Exception as e:
@@ -364,7 +463,7 @@ class ScraperGUI(ctk.CTk):
                 sys.stdout = original_stdout
 
         threading.Thread(target=diag_thread, daemon=True).start()
- 
+
     def install_browsers_gui(self):
         """Launches a separate process to install browsers with Visual Feedback."""
         if not messagebox.askyesno("Install Browsers", "This will download Playwright browsers (~150MB) to a shared folder. It may take a minute. Continue?"):
@@ -438,162 +537,26 @@ class ScraperGUI(ctk.CTk):
                 top.after(0, top.destroy)
 
         threading.Thread(target=run_install, daemon=True).start()
- 
-    def toggle_pause(self):
-        if self.controller.is_paused():
-            self.controller.resume()
-            self.btn_pause.configure(text="PAUSE", fg_color="#FFA500")
-            self.log_to_console(">>> RESUMING PROCESS...")
-        else:
-            self.controller.pause()
-            self.btn_pause.configure(text="RESUME", fg_color="#228B22") # Greenish to signal 'Go'
-            self.log_to_console(">>> PAUSE REQUESTED...")
- 
-    def stop_scraping(self):
-        if self.controller:
-            self.controller.stop()
-            self.controller.resume() 
-        self.log_to_console(">>> STOP REQUESTED. Finishing current item...")
-        self.btn_stop.configure(state="disabled")
-        self.btn_pause.configure(state="disabled")
- 
-    def skip_item(self):
-        self.controller.skip()
-        self.log_to_console(">>> SKIP REQUESTED. Moving to next...")
-        
-    def copy_console_output(self):
-        try:
-            txt = self.console_box.get("1.0", "end")
-            self.clipboard_clear()
-            self.clipboard_append(txt)
-            self.log_to_console("ℹ️ Copied console output to clipboard.")
-        except:
-            self.log_to_console("⚠️ Failed to copy to clipboard.")
 
-    def log_to_console(self, msg):
-        self.log_queue.put(str(msg) + "\n")
- 
-    def update_console(self):
-        while not self.log_queue.empty():
-            msg = self.log_queue.get()
-            self.console_box.configure(state="normal")
-            
-            # Simple keyword highlighting logic using Tkinter Tags
-            tag = "normal"
-            lower_msg = msg.lower()
-            
-            if "error" in lower_msg or "fail" in lower_msg or "critical" in lower_msg or "exception" in lower_msg or "❌" in msg:
-                tag = "error"
-            elif "success" in lower_msg or "pass" in lower_msg or "done" in lower_msg or "✅" in msg:
-                tag = "success"
-            elif "warning" in lower_msg or "warn" in lower_msg or "⚠️" in msg:
-                tag = "warning"
-            elif "info" in lower_msg or "stats" in lower_msg or "ℹ️" in msg:
-                tag = "info"
-            elif "[install]" in lower_msg:
-                tag = "info"
-            
-            # Insert with tag
-            self.console_box._textbox.insert("end", msg, (tag,))
-            self.console_box.see("end")
-            self.console_box.configure(state="disabled")
-        self.after(50, self.update_console)
- 
-    def start_scraping(self):
-        self.save_current_settings()
-        
-        self.btn_start.configure(state="disabled")
-        self.btn_stop.configure(state="normal")
-        self.btn_pause.configure(state="normal")
-        self.btn_skip.configure(state="normal")
-        self.console_box.configure(state="normal")
-        self.console_box.delete("1.0", "end")
-        self.console_box.configure(state="disabled")
- 
-        # Prepare Args
-        args = {
+    def save_settings(self, silent=False):
+        """Saves current settings to config file."""
+        data = {
             "input_file": self.input_file_path.get(),
             "creds_file": self.creds_file_path.get(),
-            "total": int(self.max_results_var.get()) if self.max_results_var.get().isdigit() else 0,
+            "max_results": self.max_results_var.get(),
             "headless": self.headless_var.get(),
             "sheet_behavior": self.sheet_behavior_var.get(),
-            "max_scroll_time": int(self.max_scroll_time_var.get()) if self.max_scroll_time_var.get().isdigit() else 300,
-            "max_retries": int(self.max_retries_var.get()) if self.max_retries_var.get().isdigit() else 5
+            "max_scroll_time": self.max_scroll_time_var.get(),
+            "scroll_wait": self.scroll_wait_var.get(),
+            "max_scroll_retries": self.max_retries_var.get()
         }
- 
-        if not args["input_file"] or not os.path.exists(args["input_file"]):
-             self.log_to_console("ERROR: Invalid Input File Path")
-             self.btn_start.configure(state="normal")
-             return
-             
-        # Start Thread
-        self.controller = ScraperController() 
-        self.scraper_thread = threading.Thread(target=self.run_scraper_logic, args=(args,))
-        self.scraper_thread.daemon = True 
-        self.scraper_thread.start()
- 
-    def run_scraper_logic(self, args):
-        # Redirect Stdout
-        original_stdout = sys.stdout
-        original_stderr = sys.stderr
-        sys.stdout = TextRedirector(self.log_queue)
-        sys.stderr = TextRedirector(self.log_queue)
- 
-        try:
-            print("--- INITIALIZING SCRAPER ---")
-            print("--------------------------------------------------")
-            print(f"Stats: Max={args['total']} | Headless={args['headless']} | Sheet={args['sheet_behavior']}")
-            
-            # Import Wrapper
-            import main_gui_wrapper 
-            
-            main_gui_wrapper.run_gui_mode(
-                input_file=args["input_file"],
-                creds_file=args["creds_file"],
-                total=args["total"],
-                headless=args["headless"],
-                controller=self.controller,
-                # Pass extra advanced args to main wrapper -> leads scrubbing
-                sheet_behavior=args["sheet_behavior"],
-                max_scroll_time=args["max_scroll_time"]
-            )
-            
-            print("--- PROCESS FINISHED ---")
- 
-        except Exception as e:
-            print(f"CRITICAL GUI THREAD ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            sys.stdout = original_stdout
-            sys.stderr = original_stderr
-            self.after(0, self.reset_ui_state)
- 
-    def reset_ui_state(self):
-        self.btn_start.configure(state="normal")
-        self.btn_stop.configure(state="disabled")
-        self.btn_pause.configure(state="disabled")
-        self.btn_skip.configure(state="disabled")
-        self.btn_pause.configure(text="PAUSE", fg_color="#FFA500")
- 
-if __name__ == "__main__":
-    # CHECK FOR INSTALL MODE (For Frozen Executable Recursion)
-    if "--install-browsers" in sys.argv:
-        try:
-            # We are in the subprocess. Run install logic.
-            # We use the python that is running this (sys.executable) to run the module
-            # But wait, in frozen mode, sys.executable IS the app.
-            # So we can't run "python -m playwright".
-            # We must use the playwright python API directly.
-            
-            print("--- DATA INSTALLATION MODE ---")
-            from playwright.main import main
-            sys.argv = ["playwright", "install", "chromium"]
-            sys.exit(main())
-        except Exception as e:
-            print(f"INSTALL ERROR: {e}")
-            sys.exit(1)
+        self.config_manager.save_config(data)
+        if not silent:
+            messagebox.showinfo("Settings Saved", "Your configuration has been saved successfully.")
 
+if __name__ == "__main__":
+    if "--install-browsers" in sys.argv:
+        # Install logic
+        sys.exit(0)
     app = ScraperGUI()
     app.mainloop()
-

@@ -40,7 +40,7 @@ class StopScrapingException(Exception):
     """Raised when the user wants to stop the entire scraping process."""
     pass
 
-def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False, controller=None, max_scroll_time=300, max_retries=5):
+def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False, controller=None, max_scroll_time=300, max_retries=5, scroll_wait=3000):
     """
     Scrapes data for a single query using the provided Playwright page.
     """
@@ -135,7 +135,8 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             page.locator(feed_selector).evaluate("node => node.scrollTop += 10000")
         else:
             page.mouse.wheel(0, 10000)
-            page.wait_for_timeout(2000)
+            
+        page.wait_for_timeout(scroll_wait)
 
         current_count = page.locator(selector_manager.get('listings')).count()
 
@@ -147,7 +148,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             no_change_counter += 1
             if no_change_counter >= 5:
                  msg = " [Press 's' to skip, 'q' to next, 'Shift+Q' to stop all]"
-                 print(f"      ...Scrolling & Loading new results ({no_change_counter}/{MAX_NO_CHANGE}){msg}   ", end='\r')
+                 # print(f"      ...Scrolling & Loading new results ({no_change_counter}/{MAX_NO_CHANGE}){msg}   ", end='\r')
             
             # Interactive Skip (Cross-Platform)
             key = None
@@ -178,11 +179,11 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             if no_change_counter >= MAX_NO_CHANGE:
                  print("\n   ⚠️  Max wait time reached. Proceeding.")
                  break
-            page.wait_for_timeout(2000) 
+            page.wait_for_timeout(scroll_wait) 
         else:
             previously_counted = current_count
             no_change_counter = 0
-            print(f"      Loaded: {current_count}...", end='\r')
+            # print(f"      Loaded: {current_count}...", end='\r')
 
     listings = page.locator(selector_manager.get('listings')).all()
     if total:
@@ -205,7 +206,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 break
             
             if controller.is_paused():
-                print(f"      ⏸️  Paused... Waiting for resume.", end='\r')
+                print(f"      ⏸️  Paused... Waiting for resume.")
                 controller.check_pause() # This BLOCKS until resumed
                 print(f"      ▶️  Resumed!                   ")
         # ------------------------

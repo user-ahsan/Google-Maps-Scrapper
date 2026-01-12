@@ -11,54 +11,69 @@ sys.path.append(os.getcwd())
 from src import sheets_utils
 from src import leads_scrapping
 from src import db
+from src.job_manager import JobManager
+from src.leads_scrapping import scrape_data # Import directly or ensure it's available
 
-def run_gui_mode(input_file, creds_file, total=0, headless=True, controller=None, sheet_behavior="Append", max_scroll_time=300, max_retries=5):
+def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, headless=True, controller=None, sheet_behavior="Append", max_scroll_time=300, max_retries=5, resume=False, stats_queue=None, scroll_wait=3000):
     """
     Entry point for the GUI to run the scraper.
     """
     print(f"Starting Scraper in GUI Mode...")
-    print(f"Input: {input_file}")
-    print(f"Creds: {creds_file} (Checking...)")
     
-    # 1. Setup Environment
-    if os.path.exists(creds_file):
-        # Override the global constant or pass it down?
-        # sheets_utils.connect_to_sheets uses a param, so we pass it there.
-        pass
-    else:
-        print(f"⚠️ Warning: Credentials file not found at {creds_file}")
+    # --- 0. Job Manager Init ---
+    job_manager = JobManager()
+    search_list = []
+    
+    # --- 1. Resolve Queries ---
+    if resume:
+        if job_manager.has_unfinished_job():
+            print(">>> RESUMING PREVIOUS JOB...")
+            search_list = job_manager.get_pending_queries()
+            if not search_list:
+                print(">>> Job was marked incomplete but has no pending queries. Starting fresh.")
+                resume = False # Fallback
+        else:
+            print(">>> No unfinished job to resume. Starting fresh.")
+            resume = False
 
-    # 2. Diagnostics
+    if not resume:
+        # Resolve fresh input
+        if input_queries and isinstance(input_queries, list) and len(input_queries) > 0:
+            search_list = input_queries
+            print(f"Loaded {len(search_list)} queries from Direct Input.")
+        elif input_file and os.path.exists(input_file):
+            print(f"Reading from Input File: {input_file}")
+            with open(input_file, 'r', encoding='utf-8') as f:
+                search_list = [line.strip() for line in f.readlines() if line.strip()]
+        
+        # Start Tracking
+        if search_list:
+            job_manager.start_new_job(search_list)
+        else:
+            print("❌ Error: No queries provided (File or Direct Input empty).")
+            return
+
+    # --- 2. Environment & Diagnostics ---
+    if creds_file and os.path.exists(creds_file):
+        print(f"Creds: {creds_file}")
+    else:
+        if creds_file: print(f"⚠️ Warning: Credentials file not found at {creds_file}")
+
     print("Running Diagnostics...", end=" ")
     sheets_client = sheets_utils.connect_to_sheets(credentials_file=creds_file)
     online_mode = (sheets_client is not None)
     print(f"Online Mode: {online_mode}")
     
-    # 3. Setup Data
+    # --- 3. Setup Data ---
     db.init_db()
-    known_names_local = db.get_known_names()
-    known_names_sheet = set()
-    worksheet = None
     
+    worksheet = None
     if online_mode:
-        # PASS BEHAVIOR
         worksheet = sheets_utils.get_or_create_worksheet(sheets_client, behavior=sheet_behavior)
         if worksheet:
-            print("Loading Online Data...", end=" ")
-            known_names_sheet = sheets_utils.get_all_known_names(worksheet)
-            print(f"[{len(known_names_sheet)} records]")
+            print("Connected to Google Sheet.")
 
-    # 4. Read Search List
-    search_list = []
-    if os.path.exists(input_file):
-        with open(input_file, 'r', encoding='utf-8') as f:
-            search_list = [line.strip() for line in f.readlines() if line.strip()]
-    
-    if not search_list:
-        print("❌ Error: No queries found in input file.")
-        return
-
-    # 5. Browser Launch
+    # --- 4. Browser Launch ---
     with sync_playwright() as p:
         print(f"Launching Browser (Headless={headless})...")
         try:
@@ -68,8 +83,6 @@ def run_gui_mode(input_file, creds_file, total=0, headless=True, controller=None
             print("Trying to install browsers...")
             import subprocess
             try:
-                # Use sys.executable but safeguard in main_gui usually, 
-                # but valid fallback if gui button didn't resolve it.
                 env = os.environ.copy()
                 subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"], env=env)
                 browser = p.chromium.launch(headless=headless)
@@ -79,57 +92,93 @@ def run_gui_mode(input_file, creds_file, total=0, headless=True, controller=None
 
         ua = UserAgent(platforms='desktop').random
         page = browser.new_page(user_agent=ua, locale="en-GB")
-        
         page.goto("https://www.google.com/maps", timeout=60000)
 
-        # 6. Process Queries
+        # --- 5. Process Queries ---
         total_limit = total if total > 0 else 1_000_000
         
-        for index, search_for in enumerate(search_list):
+        # We work on a copy or index, but JobManager tracks strings.
+        # Since we might have resumed, search_list is already the pending list.
+        
+        # Create a safe iteration list
+        current_batch = list(search_list) # Work on copy
+        
+        for index, search_for in enumerate(current_batch):
             # CONTROLLER CHECK (Outer Loop)
             if controller:
                 if controller.is_stopped(): break
                 if controller.is_paused(): controller.check_pause()
 
             try:
-                print(f"\n[{index+1}/{len(search_list)}] Processing: {search_for}")
+                print(f"\n[{index+1}/{len(current_batch)}] Processing: {search_for}")
                 
                # Refresh Dedupe Data per query
                 known_names_local = db.get_known_names()
                 existing_keys = set()
+                known_names_sheet = set()
                 if online_mode and worksheet:
                     existing_keys = sheets_utils.get_existing_keys(worksheet)
                     known_names_sheet = sheets_utils.get_all_known_names(worksheet)
 
                 # Scrape
                 business_list = leads_scrapping.scrape_data(
-                    page, 
-                    search_for, 
-                    total_limit, 
+                    page=page, 
+                    search_for=search_for, 
+                    total=total_limit, 
                     existing_keys=existing_keys,
                     known_names_sheet=known_names_sheet,
                     known_names_local=known_names_local,
                     auto_accept=True, 
                     controller=controller,
                     max_scroll_time=max_scroll_time,
-                    max_retries=max_retries
+                    max_retries=max_retries,
+                    scroll_wait=scroll_wait
                 )
                 
+                # Update Job Manager Stats
+                leads_count = len(business_list.business_list)
+                job_manager.update_leads_count(leads_count)
+                
+                # Emit Stats to GUI
+                if stats_queue:
+                    stats_queue.put({
+                        "type": "stats_update",
+                        "total_leads": job_manager.current_state["total_leads_found"],
+                        "completed": len(job_manager.current_state["completed_queries"]),
+                        "total_queries": len(job_manager.current_state["pending_queries"]) + len(job_manager.current_state["completed_queries"])
+                    })
+
                 if controller and controller.is_stopped():
                     print("Aborting save due to stop signal.")
                     break
 
                 # Save
-                print("Saving results...")
-                business_list.save_to_db()
+                print("Saving results...", end=" ")
+                db_count = business_list.save_to_db()
                 business_list.save_to_csv(search_for)
+                print(f"Local (+{db_count})", end=" ")
                 
                 if online_mode and worksheet:
                     df = business_list.dataframe()
-                    sheets_utils.upload_data_to_sheet(worksheet, df)
+                    added, _ = sheets_utils.upload_data_to_sheet(worksheet, df)
+                    print(f"| Cloud (+{added})")
+                else:
+                    print("")
+                
+                # Mark Complete
+                job_manager.mark_query_complete(search_for)
 
             except Exception as e:
                 print(f"❌ Error processing {search_for}: {e}")
+                # We do NOT mark as complete so it is retried next time
                 
         browser.close()
-        print("✅ All queries completed.")
+        
+        # If we finished the loop normally and no stop signal
+        if controller and not controller.is_stopped():
+            print("✅ All queries completed.")
+            job_manager.set_status("COMPLETED")
+            job_manager.clear_job() # Optional: clean up file
+        else:
+             print("⚠️ Stopped by User.")
+             job_manager.set_status("STOPPED")
