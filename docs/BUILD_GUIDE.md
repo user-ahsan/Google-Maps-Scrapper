@@ -70,48 +70,23 @@ We use **PyInstaller** to create the standalone application.
 Run the following command in your terminal (with venv active):
 
 ```powershell
-pyinstaller scraper.spec --clean --noconfirm
+python -m PyInstaller scraper.spec --clean --noconfirm
 ```
 
-- **Output**: The executable will be in `dist\GoogleMapsScraper\GoogleMapsScraper.exe`.
-- **Note**: The `scraper.spec` file is configured to bundle `credentials.json` logic, but you might need to copy your actual `credentials.json` next to the `.exe` if the app requests it at runtime.
+- **Output**: The executable will be `dist\GoogleMapsScraper.exe`.
+- **Note**: Copy `credentials.json` to the same folder as the `.exe` before running.
 
 ### Ubuntu Build
-PyInstaller builds **native** binaries. You cannot build a Windows `.exe` on Linux easily. This command will create a Linux executable.
-
-```bash
-pyinstaller scraper.spec --clean --noconfirm
-```
-
-- **Output**: The executable will be in `dist/GoogleMapsScraper/GoogleMapsScraper`.
-- **Running**: You may need to mark it executable: `chmod +x dist/GoogleMapsScraper/GoogleMapsScraper`.
-
----
+PyInstaller builds **native** binaries. You cannot build a Windows `.exe` on Linux easily.
 
 ## 5. Debugging & Common Issues
 
-### "No module named 'tkinter'" (Windows)
-This happens if PyInstaller cannot find the Tcl/Tk DLLs in your Python installation.
-**Fix**:
+### "No module named 'tkinter'"
+**Critical Fix in `scraper.spec`**:
+The spec file hardcodes `PYTHON_HOME` to find Tcl/Tk DLLs.
 1. Open `scraper.spec`.
-2. Locate the `MANUAL FIX` section.
-3. Ensure `PYTHON_HOME` points to your actual system Python installation (e.g., `C:\Users\YourName\AppData\Local\Programs\Python\Python313`).
-4. Re-run the build command.
+2. Update line `PYTHON_HOME = r"..."` to point to your Python install folder.
+3. Re-run the build command.
 
 ### "Browser executables not found"
-If the app fails to launch the browser:
-- Ensure you ran `playwright install chromium` in the environment where you built the exe.
-- The `scraper.spec` attempts to collect Playwright binaries, but sometimes strict antivirus policies block them.
-
-### "Permission Denied" during Build
-If `pyinstaller` fails with "Access is denied" or "PermissionError":
-1. Close any running instances of the app.
-2. Manually delete the `dist` and `build` folders.
-   - Powershell: `Remove-Item -Recurse -Force dist, build`
-3. Try building again.
-
-### Console Window
-By default, the `scraper.spec` has `console=False` for a cleaner GUI experience.
-- To see startup errors (if the GUI doesn't appear), edit `scraper.spec`:
-  Change `console=False` to `console=True`.
-- Rebuild and run. You will now see a terminal window alongside the app with error logs.
+Use the in-app **"Re-Install Browsers"** button in the Advanced Tab. This uses the bundled logic to download them locally.

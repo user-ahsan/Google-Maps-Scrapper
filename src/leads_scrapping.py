@@ -1,5 +1,6 @@
 # Made by user-ahsan
 import datetime
+import time
 from playwright.sync_api import sync_playwright
 
 # Cross-platform interactive check
@@ -166,6 +167,10 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                     else:
                          print("\n   ⚠️  Quitting current query (User Request).")
                          return BusinessList()
+
+            if controller and controller.is_skipped():
+                 print("\n   ⏭️  Skip Signal Received. Moving to next query...")
+                 break
 
             if no_change_counter >= MAX_NO_CHANGE:
                  print("\n   ⚠️  Max wait time reached. Proceeding.")

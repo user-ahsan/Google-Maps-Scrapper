@@ -31,7 +31,7 @@ The project includes a `scraper.spec` file that contains the build configuration
 To build the executable, run the following command found in the terminal:
 
 ```powershell
-pyinstaller scraper.spec
+python -m PyInstaller scraper.spec --clean --noconfirm
 ```
 
 This process may take a minute or two. You will see logs indicating the analysis and packaging process.
@@ -40,7 +40,7 @@ This process may take a minute or two. You will see logs indicating the analysis
 
 Once the build completes successfully, your executable will be located in the `dist` folder:
 
-*   **Path**: `dist\GoogleMapsScraper\GoogleMapsScraper.exe`
+*   **Path**: `dist\GoogleMapsScraper.exe`
 
 ## 5. Running the Application
 

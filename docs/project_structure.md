@@ -22,16 +22,11 @@ This folder contains documentation for the Google Maps Scraper GUI project.
 ## Troubleshooting
 
 ### PyInstaller & Tkinter Issues
-If you see `ModuleNotFoundError: No module named 'tkinter'` when running the exe, it is because `PyInstaller` failed to find the Tcl/Tk libraries in the virtual environment.
+If you see `ModuleNotFoundError: No module named 'tkinter'` when running the exe, it is because `PyInstaller` failed to find the Tcl/Tk libraries.
 
 **The Fix:**
 I have manually added the paths to the system Python's `DLLs` and `tcl` directories in `scraper.spec`:
 ```python
 PYTHON_HOME = r"C:\Users\ahsan\AppData\Local\Programs\Python\Python313"
-# ...
-datas += [
-    (os.path.join(PYTHON_HOME, "tcl", "tcl8.6"), "tcl/tcl8.6"),
-    # ...
-]
 ```
-If you move this project to another machine, you **MUST** update `PYTHON_HOME` in `scraper.spec` to point to the valid Python installation directory on that machine before rebuilding.
+If you move this project to another machine, you **MUST** update `PYTHON_HOME` in `scraper.spec` or use `docs/setup_guide.md` for instructions.

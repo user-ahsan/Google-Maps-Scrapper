@@ -221,6 +221,17 @@ class ScraperGUI(ctk.CTk):
             hover_color="#CC8400"
         )
         self.btn_pause.pack(fill="x", pady=(0, 10))
+
+        self.btn_skip = ctk.CTkButton(
+            self.control_frame, 
+            text="SKIP ITEM", 
+            command=self.skip_item, 
+            state="disabled", 
+            fg_color="#3388FF", 
+            text_color="white",
+            hover_color="#0066CC"
+        )
+        self.btn_skip.pack(fill="x", pady=(0, 10))
  
         self.btn_stop = ctk.CTkButton(
             self.control_frame, 
@@ -239,14 +250,27 @@ class ScraperGUI(ctk.CTk):
         self.main_frame.grid_rowconfigure(1, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
  
-        # Header
+        # Header Frame
+        self.header_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 5))
+        
         self.console_label = ctk.CTkLabel(
-            self.main_frame, 
+            self.header_frame, 
             text="Live Console Output", 
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color="#FFFFFF"
         )
-        self.console_label.grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
+        self.console_label.pack(side="left")
+        
+        self.btn_copy = ctk.CTkButton(
+            self.header_frame,
+            text="Copy Output",
+            width=80,
+            height=24,
+            fg_color="#444444",
+            command=self.copy_console_output
+        )
+        self.btn_copy.pack(side="right")
  
         # Console (Rich Text)
         self.console_box = ctk.CTkTextbox(
@@ -430,6 +454,19 @@ class ScraperGUI(ctk.CTk):
         self.btn_stop.configure(state="disabled")
         self.btn_pause.configure(state="disabled")
  
+    def skip_item(self):
+        self.controller.skip()
+        self.log_to_console(">>> SKIP REQUESTED. Moving to next...")
+        
+    def copy_console_output(self):
+        try:
+            txt = self.console_box.get("1.0", "end")
+            self.clipboard_clear()
+            self.clipboard_append(txt)
+            self.log_to_console("ℹ️ Copied console output to clipboard.")
+        except:
+            self.log_to_console("⚠️ Failed to copy to clipboard.")
+
     def log_to_console(self, msg):
         self.log_queue.put(str(msg) + "\n")
  
@@ -465,6 +502,7 @@ class ScraperGUI(ctk.CTk):
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
         self.btn_pause.configure(state="normal")
+        self.btn_skip.configure(state="normal")
         self.console_box.configure(state="normal")
         self.console_box.delete("1.0", "end")
         self.console_box.configure(state="disabled")
@@ -500,6 +538,7 @@ class ScraperGUI(ctk.CTk):
  
         try:
             print("--- INITIALIZING SCRAPER ---")
+            print("--------------------------------------------------")
             print(f"Stats: Max={args['total']} | Headless={args['headless']} | Sheet={args['sheet_behavior']}")
             
             # Import Wrapper
@@ -531,9 +570,27 @@ class ScraperGUI(ctk.CTk):
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
         self.btn_pause.configure(state="disabled")
+        self.btn_skip.configure(state="disabled")
         self.btn_pause.configure(text="PAUSE", fg_color="#FFA500")
  
 if __name__ == "__main__":
+    # CHECK FOR INSTALL MODE (For Frozen Executable Recursion)
+    if "--install-browsers" in sys.argv:
+        try:
+            # We are in the subprocess. Run install logic.
+            # We use the python that is running this (sys.executable) to run the module
+            # But wait, in frozen mode, sys.executable IS the app.
+            # So we can't run "python -m playwright".
+            # We must use the playwright python API directly.
+            
+            print("--- DATA INSTALLATION MODE ---")
+            from playwright.main import main
+            sys.argv = ["playwright", "install", "chromium"]
+            sys.exit(main())
+        except Exception as e:
+            print(f"INSTALL ERROR: {e}")
+            sys.exit(1)
+
     app = ScraperGUI()
     app.mainloop()
 
