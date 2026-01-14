@@ -300,9 +300,10 @@ def main():
                 print(f"Done (+{new_db_count} new).")
                 
                 # Save to CSV (Export)
-                # clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
-                # csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
-                # print(f"   📂 Exported to CSV: {csv_path}")
+                clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
+                csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
+                print(f"   📂 Exported to CSV: {csv_path}")
+
 
                 # Upload to Sheets (If Online)
                 if online_mode and worksheet:

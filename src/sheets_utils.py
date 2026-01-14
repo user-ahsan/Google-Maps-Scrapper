@@ -5,11 +5,73 @@ import os
 import pandas as pd
 import datetime
 import glob
+import re
 from dataclasses import dataclass, asdict, field
 
 # --- Configuration ---
 SHEET_NAME = "Gmaps Leads"  # The Google Sheet to save results to
 CREDENTIALS_FILE = "credentials.json"
+
+# --- Text Cleaning Utilities ---
+
+def remove_emojis(text):
+    """
+    Remove emoji and special Unicode characters from text.
+    Preserves normal text, numbers, and standard punctuation.
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    # Comprehensive emoji pattern covering all Unicode emoji ranges
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002500-\U00002BEF"  # chinese char
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001f926-\U0001f937"
+        "\U00010000-\U0010ffff"
+        "\u2640-\u2642" 
+        "\u2600-\u2B55"
+        "\u200d"
+        "\u23cf"
+        "\u23e9"
+        "\u231a"
+        "\ufe0f"  # dingbats
+        "\u3030"
+        "]+", 
+        flags=re.UNICODE
+    )
+    
+    return emoji_pattern.sub(r'', text).strip()
+
+def clean_text_for_csv(text):
+    """
+    Clean text for safe CSV export:
+    - Remove emojis
+    - Remove excessive whitespace
+    - Remove newlines and carriage returns
+    - Trim leading/trailing whitespace
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    # Remove emojis first
+    text = remove_emojis(text)
+    
+    # Replace newlines and carriage returns with spaces
+    text = text.replace('\n', ' ').replace('\r', ' ')
+    
+    # Replace multiple spaces with single space
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Trim
+    text = text.strip()
+    
+    return text
 
 # Strict Schema Definition
 EXPECTED_HEADERS = [
@@ -141,9 +203,17 @@ class BusinessList:
 
         Returns: pandas dataframe
         """
-        return pd.json_normalize(
+        df = pd.json_normalize(
             (asdict(business) for business in self.business_list), sep="_"
         )
+        
+        # Apply text cleaning to all string columns as final safety layer
+        for col in df.columns:
+            if df[col].dtype == 'object':  # String columns
+                df[col] = df[col].apply(lambda x: clean_text_for_csv(x) if isinstance(x, str) else x)
+        
+        return df
+
 
     def save_to_csv(self, filename) -> str:
         """saves pandas dataframe to csv file. Returns path.

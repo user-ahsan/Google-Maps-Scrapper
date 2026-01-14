@@ -216,7 +216,11 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             listing_name = ""
             aria_label = listing.get_attribute('aria-label')
             if aria_label:
-                listing_name = aria_label.split('·')[0].strip() # Often "Name · Rating"
+                # Import cleaning function
+                from .sheets_utils import clean_text_for_csv
+                # Clean and extract name (often "Name · Rating")
+                raw_name = aria_label.split('·')[0].strip()
+                listing_name = clean_text_for_csv(raw_name)
             
             # Simple normalization for check
             check_name = listing_name.lower().strip()
@@ -284,6 +288,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             business.scraped_query = search_for
             business.scraped_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
             def safe_extract(locator_strategy, label, required=False):
                 """
                 Robust extraction with error logging.
@@ -292,7 +297,10 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 try:
                     el = locator_strategy(details_pane)
                     if el.count() > 0:
-                        return el.first.inner_text(timeout=1000).strip()
+                        raw_text = el.first.inner_text(timeout=1000).strip()
+                        # Import and use cleaning function
+                        from .sheets_utils import clean_text_for_csv
+                        return clean_text_for_csv(raw_text)
                 except Exception as e:
                     # Log warning for ALL failures, not just required ones, but keep it clean
                     if required:
@@ -302,6 +310,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                          # print(f"         ⚠️ (Optional) Failed to extract {label}")
                          pass
                 return ""
+
 
             # Method 3: Fallback specific text extraction for count
             # Extract Data
