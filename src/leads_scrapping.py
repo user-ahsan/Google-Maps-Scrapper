@@ -286,7 +286,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
 
             business = Business()
             business.scraped_query = search_for
-            business.scraped_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            business.scraped_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
             def safe_extract(locator_strategy, label, required=False):
@@ -404,8 +404,19 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             except Exception as e: 
                 print(f"         ⚠️ Reviews Extraction Error: {e}")
 
-            business.category = search_for.split(' in ')[0].strip()
-            business.location = search_for.split(' in ')[-1].strip()
+            # Extract actual category from business details (if available)
+            # Category is often in buttons or spans near the business name
+            business.category = safe_extract(
+                lambda p: p.locator(selector_manager.get('category_button')),
+                "Category"
+            )
+            # Fallback to query parsing if no category found
+            if not business.category:
+                business.category = search_for.split(' in ')[0].strip() if ' in ' in search_for else search_for
+            
+            # Location from query (this is the search location, which is acceptable)
+            business.location = search_for.split(' in ')[-1].strip() if ' in ' in search_for else search_for
+            
             try:
                 business.latitude, business.longitude = extract_coordinates_from_url(page.url)
             except: pass

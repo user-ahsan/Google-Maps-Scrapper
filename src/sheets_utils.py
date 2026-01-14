@@ -249,7 +249,8 @@ class BusinessList:
             if os.path.exists(path) and os.path.getsize(path) == 0:
                 header = True
                 
-            df.to_csv(path, index=False, mode='a', header=header)
+            # Use utf-8-sig encoding for Excel compatibility (adds BOM)
+            df.to_csv(path, index=False, mode='a', header=header, encoding='utf-8-sig')
             
         return path
 
