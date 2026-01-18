@@ -55,4 +55,4 @@ python gui_app.py
 ```powershell
 python -m PyInstaller scraper.spec --clean --noconfirm
 ```
-executable will be in `dist/GoogleMapsScraper.exe`.
+executable will be in `dist/GoogleMapsScraper_v2.0.exe`.

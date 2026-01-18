@@ -90,7 +90,7 @@ def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, 
                  print("❌ Fatal Browser Error. Please use 'Re-Install Browsers' button.")
                  return
 
-        ua = UserAgent(platforms='desktop').random
+        ua = UserAgent().random
         page = browser.new_page(user_agent=ua, locale="en-GB")
         page.goto("https://www.google.com/maps", timeout=60000)
 

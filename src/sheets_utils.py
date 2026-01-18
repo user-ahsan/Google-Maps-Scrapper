@@ -230,11 +230,21 @@ class BusinessList:
         # Use filename parameter if provided, otherwise default to 'Gmaps Leads'
         target_file = filename if filename else "Gmaps Leads"
         path = f"{self.save_at}/{target_file}.csv"
-            if os.path.exists(path) and os.path.getsize(path) == 0:
-                header = True
+        
+        df = self.dataframe()
+        if df.empty:
+            return path
+
+        try:
+            with FileLock(path):
+                header = False
+                if not os.path.exists(path) or os.path.getsize(path) == 0:
+                    header = True
                 
-            # Use utf-8-sig encoding for Excel compatibility (adds BOM)
-            df.to_csv(path, index=False, mode='a', header=header, encoding='utf-8-sig')
+                # Use utf-8-sig encoding for Excel compatibility (adds BOM)
+                df.to_csv(path, index=False, mode='a', header=header, encoding='utf-8-sig')
+        except Exception as e:
+            print(f"⚠️  Error saving CSV: {e}")
             
         return path
 

@@ -48,7 +48,7 @@ If you modify the Python code (files in `src/` or `gui_app.py`), you must rebuil
     ```cmd
     pyinstaller scraper.spec
     ```
-3.  The new `GoogleMapsScraper.exe` will be in the `dist/` folder.
+3.  The new `GoogleMapsScraper_v2.0.exe` will be in the `dist/` folder.
 
 ## 4. Deep Dive Documentation
 For code-level maintenance details:

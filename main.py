@@ -275,7 +275,7 @@ def main():
         elif UserAgent:
             try:
                 # Generate new User-Agent and store it
-                ua_gen = UserAgent(platforms='desktop')
+                ua_gen = UserAgent()
                 ua = ua_gen.random
                 config_mgr.set("user_agent", ua)
                 print(f"   🕵️  User-Agent: {ua} (Generated and stored)")

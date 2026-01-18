@@ -4,7 +4,7 @@ This guide is for **Installation & Configuration** of the Google Maps Scraper Pr
 
 ## 📋 Prerequisites
 Before you start, you need:
-1.  **GoogleMapsScraper.exe** (The application file).
+1.  **GoogleMapsScraper_v2.0.exe** (The application file).
 2.  A Google Account (gmail) to create the Google Sheets API key.
 
 ---
@@ -51,7 +51,7 @@ This is the **most important step**. The scraper needs this file to save data to
 ## 📂 Step 2: Folder Setup
 
 Create a new folder on your Desktop named `Scraper`. Inside it, place these 3 items:
-1.  **`GoogleMapsScraper.exe`** (The app).
+1.  **`GoogleMapsScraper_v2.0.exe`** (The app).
 2.  **`credentials.json`** (The key you just created).
 3.  **`input.txt`** (Create a text file with your search queries).
 
@@ -66,7 +66,7 @@ Dentists in Paris
 
 ## 🚀 Step 3: First Run
 
-1.  Double-click `GoogleMapsScraper.exe`.
+1.  Double-click `GoogleMapsScraper_v2.0.exe`.
 2.  (First time only) Go to the **Advanced Tab** and click **Re-Install Browsers**.
     -   *Why?* The app needs a specific version of Chromium to automate the scraping. It sends a small download request to get it.
 3.  Go back to the **General Tab**.
@@ -78,7 +78,7 @@ Dentists in Paris
 ## ❓ FAQ
 
 **Q: The app opens then closes immediately.**
-A: It likely crashed. Open a command prompt in that folder and run `GoogleMapsScraper.exe` manually to see the error message. Usually, it's missing `credentials.json`.
+A: It likely crashed. Open a command prompt in that folder and run `GoogleMapsScraper_v2.0.exe` manually to see the error message. Usually, it's missing `credentials.json`.
 
 **Q: "Browsers not found"?**
 A: Use the **Re-Install Browsers** button in the Advanced tab.

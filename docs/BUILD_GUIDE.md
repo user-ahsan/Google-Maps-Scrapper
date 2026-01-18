@@ -73,7 +73,7 @@ Run the following command in your terminal (with venv active):
 python -m PyInstaller scraper.spec --clean --noconfirm
 ```
 
-- **Output**: The executable will be `dist\GoogleMapsScraper.exe`.
+- **Output**: The executable will be `dist\GoogleMapsScraper_v2.0.exe`.
 - **Note**: Copy `credentials.json` to the same folder as the `.exe` before running.
 
 ### Ubuntu Build

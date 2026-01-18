@@ -73,7 +73,7 @@ python -m PyInstaller scraper.spec --clean --noconfirm
 ```
 
 ### Build output
-The result is a single file: `dist/GoogleMapsScraper.exe`.
+The result is a single file: `dist/GoogleMapsScraper_v2.0.exe`.
 
 ## 5. Troubleshooting Common Issues
 

@@ -2,9 +2,9 @@
 
 ## 🚀 Quick Start
 
-1.  **Download**: Get the `GoogleMapsScraper.exe`.
+1.  **Download**: Get the `GoogleMapsScraper_v2.0.exe`.
 2.  **Prepare**: Place your `input.txt` (queries) and `credentials.json` (Google Sheets access) in the same folder as the `.exe`.
-3.  **Run**: Double-click `GoogleMapsScraper.exe`.
+3.  **Run**: Double-click `GoogleMapsScraper_v2.0.exe`.
 
 ---
 

@@ -47,6 +47,9 @@ datas.append(('credentials.json', '.'))
 if os.path.exists('assets'):
     datas.append(('assets', 'assets'))
 
+if os.path.exists('test'):
+    datas.append(('test', 'test'))
+
 datas.append(('assets/selectors.json', 'assets'))
 
 # 5. Metadata
