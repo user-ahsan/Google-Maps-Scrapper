@@ -1,6 +1,11 @@
 import json
 import os
 import sys
+import logging
+
+from .logger import setup_logger
+
+logger = setup_logger(__name__)
 
 class SelectorManager:
     """
@@ -39,25 +44,25 @@ class SelectorManager:
         if os.path.exists(local_path):
             try:
                 with open(local_path, 'r') as f:
-                    print(f"DEBUG: Loaded user selectors from {local_path}")
+                    logger.debug(f"Loaded user selectors from {local_path}")
                     return self._merge_defaults(json.load(f))
             except Exception as e:
-                print(f"WARNING: Failed to load user selectors: {e}")
+                logger.warning(f"Failed to load user selectors: {e}")
 
         # 2. Check Bundled (PyInstaller)
-        if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
             base_path = sys._MEIPASS
             bundled_path = os.path.join(base_path, 'assets', 'selectors.json')
             if os.path.exists(bundled_path):
                 try:
                     with open(bundled_path, 'r') as f:
-                        print(f"DEBUG: Loaded bundled selectors from {bundled_path}")
+                        logger.debug(f"Loaded bundled selectors from {bundled_path}")
                         return self._merge_defaults(json.load(f))
                 except Exception as e:
-                    print(f"WARNING: Failed to load bundled selectors: {e}")
+                    logger.warning(f"Failed to load bundled selectors: {e}")
         
         # 3. Fallback
-        print("DEBUG: Using hardcoded default selectors")
+        logger.debug("Using hardcoded default selectors")
         return self._defaults
 
     def _merge_defaults(self, loaded):

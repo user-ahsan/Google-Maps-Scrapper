@@ -14,8 +14,9 @@ except ImportError:
 # Import Refactored Modules
 try:
     from src import sheets_utils
-    from src import leads_scrapping
+    from src import leads_scraping
     from src import db
+    from src.security_utils import validate_input, validate_config_file
     # from src import resource_utils # Optional utility
 except ImportError as e:
     print(f"CRITICAL ERROR: Could not import modules: {e}")
@@ -79,6 +80,15 @@ def run_diagnostics(force_offline=False):
         print("   -> Could not connect to Google Sheets. Will run in OFFLINE mode.")
 
     print("-" * 50)
+    
+    # Initialize Local DB
+    print("3. Initializing Local Database...", end=" ")
+    try:
+        db.init_db()
+        print("✅ PASS")
+    except Exception as e:
+        print(f"⚠️  WARNING: DB Init failed: {e}")
+
     return browser_ready, sheets_client, online_mode
 
 def sync_offline_data(sheets_client):
@@ -137,6 +147,24 @@ def main():
     parser.add_argument("--install-browsers", action="store_true", help="INTERNAL: Run browser installer and exit")
     
     args = parser.parse_args()
+    
+    # Validate config file
+    try:
+        validate_config_file("config.json")
+        print("✅ Config file validated successfully")
+    except Exception as e:
+        print(f"⚠️  Config validation warning: {e}")
+        print("   Using default values for invalid config entries.")
+    
+    # Validate command line arguments
+    if args.total and (args.total < 0 or args.total > 100000):
+        print("⚠️  Warning: total should be between 0 and 100,000. Using default.")
+        args.total = 1_000_000
+    
+    if args.search:
+        if not validate_input("search_query", args.search):
+            print("❌ Invalid search query. Contains potentially harmful characters.")
+            sys.exit(1)
 
     # --- SPECIAL MODE: BROWSER INSTALLATION ---
     if args.install_browsers:
@@ -231,16 +259,26 @@ def main():
     # 3. Start Orchestration
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not args.headed)
-        browser = p.chromium.launch(headless=not args.headed)
         
-        # Dynamic User Agent (Robust Fallback)
+        # Dynamic User Agent with Persistence
+        from src.config_manager import ConfigManager
+        config_mgr = ConfigManager()
+        config = config_mgr.get_config()
+        
+        stored_ua = config.get("user_agent", "")
         ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        if UserAgent:
+        
+        if stored_ua:
+            # Use stored User-Agent from config (consistency)
+            ua = stored_ua
+            print(f"   🕵️  User-Agent: {ua} (Stored in config)")
+        elif UserAgent:
             try:
-                # Force desktop to avoid mobile layouts which break selectors
+                # Generate new User-Agent and store it
                 ua_gen = UserAgent(platforms='desktop')
                 ua = ua_gen.random
-                print(f"   🕵️  User-Agent: {ua}")
+                config_mgr.set("user_agent", ua)
+                print(f"   🕵️  User-Agent: {ua} (Generated and stored)")
             except Exception as e:
                  print(f"   🕵️  User-Agent: {ua} (Fallback - Generator Error: {e})")
         else:
@@ -248,8 +286,6 @@ def main():
 
         page = browser.new_page(locale="en-GB", user_agent=ua)
 
-        page.goto("https://www.google.com/maps", timeout=20000)
-        
         page.goto("https://www.google.com/maps", timeout=20000)
         
         for index, search_for in enumerate(search_list):
@@ -279,7 +315,7 @@ def main():
                 print(f"[Done. Local (DB): {len(known_names_local)} | Online: {len(known_names_sheet)}]")
 
                 # Scrape
-                business_list_obj = leads_scrapping.scrape_data(
+                business_list_obj = leads_scraping.scrape_data(
                     page, 
                     search_for, 
                     total, 
@@ -314,7 +350,7 @@ def main():
                     except Exception as e:
                         print(f"Failed to upload: {e}")
 
-            except leads_scrapping.StopScrapingException:
+            except leads_scraping.StopScrapingException:
                 print("\n🛑 Execution Interrupted by User (Shift+Q). Stopping queues.")
                 break
             except Exception as query_error:

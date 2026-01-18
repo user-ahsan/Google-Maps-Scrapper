@@ -5,10 +5,12 @@ from playwright.sync_api import sync_playwright
 
 # Cross-platform interactive check
 try:
-    import msvcrt # Windows only
+    import msvcrt
     IS_WINDOWS = True
+    IS_WINDOWS_VAR = msvcrt
 except ImportError:
     IS_WINDOWS = False
+    IS_WINDOWS_VAR = None
     import sys, tty, termios, select
 
     def unix_kbhit():
@@ -40,17 +42,58 @@ class StopScrapingException(Exception):
     """Raised when the user wants to stop the entire scraping process."""
     pass
 
-def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False, controller=None, max_scroll_time=300, max_retries=5, scroll_wait=3000):
+class RateLimiter:
+    """Rate limiter with exponential backoff and jitter to avoid detection."""
+    
+    def __init__(self, base_delay=3.0, max_delay=30.0, jitter_pct=0.25):
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.jitter_pct = jitter_pct
+        self.request_count = 0
+        self.consecutive_failures = 0
+        self.current_delay = base_delay
+    
+    def wait(self, force_delay=None):
+        """Wait with exponential backoff and jitter."""
+        import time
+        import random
+        
+        if force_delay:
+            delay = force_delay
+        else:
+            # Add jitter to avoid detection patterns
+            jitter = self.current_delay * self.jitter_pct
+            delay = self.current_delay + random.uniform(-jitter, jitter)
+        
+        delay = max(0.5, min(delay, self.max_delay))
+        time.sleep(delay)
+    
+    def record_success(self):
+        """Reset delay after successful request."""
+        self.consecutive_failures = 0
+        self.current_delay = self.base_delay
+    
+    def record_failure(self):
+        """Increase delay with exponential backoff after failure."""
+        self.consecutive_failures += 1
+        self.current_delay = min(self.base_delay * (2 ** self.consecutive_failures), self.max_delay)
+        self.request_count += 1
+
+def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=None, known_names_local=None, auto_accept=False, controller=None, max_scroll_time=300, max_retries=5, scroll_wait=3000, scroll_amount_per_step=10000, auto_skip_timeout=0, smart_wait_enabled=True, use_feed_scroll=True, pre_filter_names=True, show_progress=True, interactive_controls=True):
     """
     Scrapes data for a single query using the provided Playwright page.
     """
-    print(f"\n🚀 STARTED SCRAPING: {search_for}")
-    print(f"   Target: {total} leads | Limit: {max_scroll_time}s")
+    print(f"\n[INFO] STARTED SCRAPING: {search_for}")
+    scroll_mode = "feed" if use_feed_scroll else "global"
+    print(f"   Target: {total} leads | Limit: {max_scroll_time}s | Scroll: {scroll_amount_per_step}px/step | Wait: {scroll_wait}ms | Mode: {scroll_mode} | Smart: {smart_wait_enabled}")
 
     # --- SETUP UTILS ---
     selector_manager = SelectorManager()
     logger = setup_logger()
     logger.info(f"Start Scraping: {search_for} (Target: {total})")
+    
+    # Initialize rate limiter for Google Maps requests
+    rate_limiter = RateLimiter(base_delay=float(scroll_wait) / 1000.0, max_delay=30.0)
     
     # Combined stats for log
     k_sheet = len(known_names_sheet) if known_names_sheet else 0
@@ -61,43 +104,56 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     search_box = None
     selectors = selector_manager.get("search_box")
     
-    print("   🔍 Waiting for search box...", end=" ", flush=True)
-    for _ in range(30): # Wait up to 30 seconds (checks every 1s)
+    print("   [SEARCH] Waiting for search box...", end=" ", flush=True)
+    
+    search_box = None
+    selectors = selector_manager.get("search_box")
+    
+    for _ in range(30):
         for sel in selectors:
             try:
                 if page.locator(sel).count() > 0 and page.locator(sel).is_visible():
                     search_box = page.locator(sel).first
                     print(f"Found ({sel})")
                     break
-            except: pass
-        if search_box: break
+            except:
+                pass
+        if search_box:
+            break
         page.wait_for_timeout(1000)
 
     if search_box:
         try:
             search_box.click()
             search_box.fill(search_for)
-        except Exception as e:
-             print(f"\n   ❌ Error interacting with search box: {e}")
-             return BusinessList()
+            rate_limiter.wait()
+            rate_limiter.record_success()
+        except (ElementHandleError, TimeoutError) as e:
+            logger.error(f"Error interacting with search box: {e}")
+            print(f"   [ERROR] Error interacting with search box: {e}")
+            rate_limiter.record_failure()
+            return BusinessList()
     else:
-        print("\n   ❌ CRITICAL: Could not find search box. Google layout might have changed.")
+        print("\n   [ERROR] CRITICAL: Could not find search box. Google layout might have changed.")
         logger.error("CRITICAL: Could not find search box. Layout changed.")
         return BusinessList()
+
         
     page.wait_for_timeout(2000)
 
     page.keyboard.press("Enter")
+    rate_limiter.wait()
+    rate_limiter.record_success()
     page.wait_for_timeout(4000)
 
     # --- VERIFICATION STEP ---
-    print(f"\n   🔎 VERIFY SEARCH URL:")
+    print(f"\n   [VERIFY] VERIFY SEARCH URL:")
     print(f"   {page.url}")
     if IS_WINDOWS and not auto_accept:
          print("   Press Enter in terminal to confirm and start scrolling... ", end='')
          input()
     elif auto_accept:
-         print("   ⏩ Auto-accepting URL (Autonomous Mode)")
+         print("   [AUTO] Auto-accepting URL (Autonomous Mode)")
          page.wait_for_timeout(2000)
     else:
          page.wait_for_timeout(3000) 
@@ -107,7 +163,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     try:
         page.hover('//a[contains(@href, "https://www.google.com/maps/place")]', timeout=5000)
     except:
-        print("   ⚠️  No results found or page layout changed.")
+        print("   [WARN] No results found or page layout changed.")
         return BusinessList()
 
     previously_counted = 0
@@ -118,30 +174,40 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     start_time = time.time() # Start Timer
 
     # --- LIST COLLECTING LOOP ---
-    print(f"   📜 Scrolling to load listings...")
+    print(f"   [SCROLL] Scrolling to load listings...")
     while True:
         # Check Timeout
         if (time.time() - start_time) > max_scroll_time:
-            print(f"   ⚠️  Time limit reached ({max_scroll_time}s). Proceeding with current list.")
+            print(f"   [WARN] Time limit reached ({max_scroll_time}s). Proceeding with current list.")
             break
 
         # Check for "End of list"
         if page.locator('//*[contains(text(), "reached the end of the list")]').count() > 0:
-             print(f"   ✅ Reached end of list.")
+             print(f"   [DONE] Reached end of list.")
              break
         
         # Scroll
-        if page.locator(feed_selector).count() > 0:
-            page.locator(feed_selector).evaluate("node => node.scrollTop += 10000")
+        if use_feed_scroll and page.locator(feed_selector).count() > 0:
+            page.locator(feed_selector).evaluate(f"node => node.scrollTop += {scroll_amount_per_step}")
         else:
-            page.mouse.wheel(0, 10000)
-            
-        page.wait_for_timeout(scroll_wait)
-
+            page.mouse.wheel(0, scroll_amount_per_step)
+        
+        rate_limiter.wait()
+        rate_limiter.record_success()
+             
+        if smart_wait_enabled:
+            page.wait_for_timeout(scroll_wait)
+        else:
+            page.wait_for_timeout(scroll_wait)
+        
         current_count = page.locator(selector_manager.get('listings')).count()
-
+        
         if total and current_count >= total:
-            print(f"   🛑 Hit limit of {total}.")
+            print(f"   [STOP] Hit limit of {total}.")
+            break
+        
+        if auto_skip_timeout > 0 and (time.time() - start_time) > auto_skip_timeout:
+            print(f"   [SKIP] Auto-skip timeout reached ({auto_skip_timeout}s). Proceeding.")
             break
         
         if current_count == previously_counted:
@@ -152,32 +218,32 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             
             # Interactive Skip (Cross-Platform)
             key = None
-            if IS_WINDOWS:
-               if msvcrt.kbhit():
-                   key = msvcrt.getwch()
-            else:
-               if unix_kbhit():
-                   key = unix_getch()
+            if interactive_controls:
+                if IS_WINDOWS:
+                    if msvcrt.kbhit():
+                        key = msvcrt.getwch()
+                else:
+                    if unix_kbhit():
+                        key = unix_getch()
 
-            if key:
-                if key.lower() == 's':
-                    print("\n   ⏭️  Skipping wait (User Request). Proceeding.")
-                    break
-                elif key.lower() == 'q':
-                    # ... logic same as before ...
-                    if key == 'Q':
-                         print("\n   🛑 HARD STOP (User Request). Stopping all queries...")
-                         raise StopScrapingException("User pressed Shift+Q")
-                    else:
-                         print("\n   ⚠️  Quitting current query (User Request).")
-                         return BusinessList()
+                if key:
+                    if key.lower() == 's':
+                        print("\n   [SKIP] Skipping wait (User Request). Proceeding.")
+                        break
+                    elif key.lower() == 'q':
+                        if key == 'Q':
+                            print("\n   [STOP] HARD STOP (User Request). Stopping all queries...")
+                            raise StopScrapingException("User pressed Shift+Q")
+                        else:
+                            print("\n   [QUIT] Quitting current query (User Request).")
+                            return BusinessList()
 
             if controller and controller.is_skipped():
-                 print("\n   ⏭️  Skip Signal Received. Moving to next query...")
+                 print("\n   [SKIP] Skip Signal Received. Moving to next query...")
                  break
 
             if no_change_counter >= MAX_NO_CHANGE:
-                 print("\n   ⚠️  Max wait time reached. Proceeding.")
+                 print("\n   [WARN] Max wait time reached. Proceeding.")
                  break
             page.wait_for_timeout(scroll_wait) 
         else:
@@ -189,7 +255,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
     if total:
         listings = listings[:total]
     
-    print(f"\n   🔍 Processing {len(listings)} Listings...")
+    print(f"\n   [PROCESS] Processing {len(listings)} Listings...")
 
     business_list = BusinessList()
     visited_urls = set()
@@ -202,43 +268,41 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
         # --- CONTROLLER CHECK ---
         if controller:
             if controller.is_stopped():
-                print("\n   🛑 STOP Signal Received. Exiting loop.")
+                print("\n   [STOP] STOP Signal Received. Exiting loop.")
                 break
             
             if controller.is_paused():
-                print(f"      ⏸️  Paused... Waiting for resume.")
+                print(f"      [PAUSE] Paused... Waiting for resume.")
                 controller.check_pause() # This BLOCKS until resumed
-                print(f"      ▶️  Resumed!                   ")
+                print(f"      [RESUME] Resumed!                   ")
         # ------------------------
         try:
-            # 1. OPTIMIZATION: Name Based Pre-Check
-            # Try to get the name from aria-label or text BEFORE clicking
             listing_name = ""
-            aria_label = listing.get_attribute('aria-label')
-            if aria_label:
-                # Import cleaning function
-                from .sheets_utils import clean_text_for_csv
-                # Clean and extract name (often "Name · Rating")
-                raw_name = aria_label.split('·')[0].strip()
-                listing_name = clean_text_for_csv(raw_name)
-            
-            # Simple normalization for check
-            check_name = listing_name.lower().strip()
-            
-            if listing_name:
-                check_name = listing_name.lower().strip()
-                
+            check_name = ""
+
+            if pre_filter_names:
+                # 1. OPTIMIZATION: Name Based Pre-Check
+                # Try to get the name from aria-label or text BEFORE clicking
+                aria_label = listing.get_attribute('aria-label')
+                if aria_label:
+                    from .sheets_utils import clean_text_for_csv
+                    raw_name = aria_label.split('·')[0].strip()
+                    listing_name = clean_text_for_csv(raw_name)
+                 
+                # Simple normalization for check
+                check_name = listing_name.lower().strip() if listing_name else ""
+                  
                 # Granular Checks
                 if check_name:
                     display_name = (listing_name[:30] + '..') if len(listing_name) > 30 else listing_name
                     
                     if known_names_sheet and check_name in known_names_sheet:
-                        print(f"   ⏭️ {display_name:<32} | [Found in Google Sheet]")
+                        print(f"   [SKIP] {display_name:<32} | [Found in Google Sheet]")
                         skipped_count += 1
                         continue
                     
                     if known_names_local and check_name in known_names_local:
-                        print(f"   ⏭️ {display_name:<32} | [Found in Local DB]")
+                        print(f"   [SKIP] {display_name:<32} | [Found in Local DB]")
                         skipped_count += 1
                         continue
             
@@ -252,6 +316,8 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             
             # --- ACTION: CLICK & EXTRACT ---
             listing.click()
+            rate_limiter.wait()
+            rate_limiter.record_success()
             page.wait_for_timeout(1500) # Short wait for panel
             
             # --- SCOPED SCRAPING: SMART CONTEXT ---
@@ -280,7 +346,7 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 # Verify H1 exists
                 details_pane.locator(selector_manager.get('business_name')).first.wait_for(timeout=3000)
             except Exception as e:
-                print(f"      ⚠️  Skip: could not locate business details (H1 timeout). {e}")
+                print(f"      [SKIP] Skip: could not locate business details (H1 timeout). {e}")
                 logger.warning(f"Skip: H1 Timeout: {e}")
                 continue
 
@@ -304,10 +370,10 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                 except Exception as e:
                     # Log warning for ALL failures, not just required ones, but keep it clean
                     if required:
-                         print(f"         ⚠️ Failed to extract {label}: {e}")
+                         print(f"         [WARN] Failed to extract {label}: {e}")
                     else:
                          # Optional Debug Log
-                         # print(f"         ⚠️ (Optional) Failed to extract {label}")
+                         # print(f"         [WARN] (Optional) Failed to extract {label}")
                          pass
                 return ""
 
@@ -400,9 +466,8 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
                     # No, let's look for known container classes or structure if possible.
                     # But since we want to avoid classes, let's rely on the stars element sibling.
                     pass 
-
             except Exception as e: 
-                print(f"         ⚠️ Reviews Extraction Error: {e}")
+                print(f"         [WARN] Reviews Extraction Error: {e}")
 
             # Extract actual category from business details (if available)
             # Category is often in buttons or spans near the business name
@@ -429,21 +494,25 @@ def scrape_data(page, search_for, total, existing_keys=None, known_names_sheet=N
             is_new = True
             if existing_keys and key in existing_keys:
                 is_new = False
-            
-            # --- BEAUTIFUL LOGGING ---
-            display_name = (business.name[:30] + '..') if len(business.name) > 30 else business.name
+             
+            if show_progress:
+                # Clean display name for console safety
+                safe_name = business.name.encode('ascii', 'ignore').decode('ascii')
+                display_name = (safe_name[:30] + '..') if len(safe_name) > 30 else safe_name
+                
+                if is_new:
+                    r_count = f"({business.reviews_count})" if business.reviews_count else ""
+                    print(f"   [OK] {display_name:<32} | Phone: {business.phone_number:<15} | Rating: {business.reviews_average} {r_count}")
+                else:
+                    print(f"   [DUP] {display_name:<32} | [DUPLICATE]")
             
             if is_new:
                 business_list.add_business(business)
-                r_count = f"({business.reviews_count})" if business.reviews_count else ""
-                # Compact single line format
-                print(f"   ✅ {display_name:<32} | 📞 {business.phone_number:<15} | ⭐ {business.reviews_average} {r_count}")
-            else:
-                 print(f"   ❌ {display_name:<32} | [DUPLICATE]")
             
         except Exception as e:
-            print(f"      ⚠️  Error: {e}")
+            print(f"      [ERROR] Warning: {e}")
             logger.error(f"Error processing listing: {e}")
 
-    print(f"\n   🏁 Finished. Scraped: {len(business_list.business_list)} | Skipped (Pre-Check): {skipped_count}")
+    print(f"\n   [DONE] Finished. Scraped: {len(business_list.business_list)} | Skipped (Pre-Check): {skipped_count}")
+    logger.info(f"Finished scraping {search_for}. Total: {len(business_list.business_list)}")
     return business_list

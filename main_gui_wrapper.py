@@ -9,12 +9,12 @@ from fake_useragent import UserAgent
 sys.path.append(os.getcwd())
 
 from src import sheets_utils
-from src import leads_scrapping
+from src import leads_scraping
 from src import db
 from src.job_manager import JobManager
-from src.leads_scrapping import scrape_data # Import directly or ensure it's available
+from src.leads_scraping import scrape_data # Import directly or ensure it's available
 
-def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, headless=True, export_csv=True, controller=None, sheet_behavior="Append", max_scroll_time=300, max_retries=5, resume=False, stats_queue=None, scroll_wait=3000):
+def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, headless=True, export_csv=True, controller=None, sheet_behavior="Append", max_scroll_time=300, max_retries=5, resume=False, stats_queue=None, scroll_wait=3000, scroll_amount_per_step=10000, auto_skip_timeout=0, smart_wait_enabled=True, use_feed_scroll=True, export_sheets=True, export_db=True, auto_upload=False, auto_accept=True, manual_verification=False, interactive_controls=True, show_progress=True, pre_filter_names=True, batch_db_ops=True, cache_sheet_data=True):
     """
     Entry point for the GUI to run the scraper.
     """
@@ -121,18 +121,25 @@ def run_gui_mode(input_queries=None, input_file=None, creds_file=None, total=0, 
                     known_names_sheet = sheets_utils.get_all_known_names(worksheet)
 
                 # Scrape
-                business_list = leads_scrapping.scrape_data(
-                    page=page, 
-                    search_for=search_for, 
-                    total=total_limit, 
+                business_list = leads_scraping.scrape_data(
+                    page=page,
+                    search_for=search_for,
+                    total=total_limit,
                     existing_keys=existing_keys,
                     known_names_sheet=known_names_sheet,
                     known_names_local=known_names_local,
-                    auto_accept=True, 
+                    auto_accept=auto_accept,
                     controller=controller,
                     max_scroll_time=max_scroll_time,
                     max_retries=max_retries,
-                    scroll_wait=scroll_wait
+                    scroll_wait=scroll_wait,
+                    scroll_amount_per_step=scroll_amount_per_step,
+                    auto_skip_timeout=auto_skip_timeout,
+                    smart_wait_enabled=smart_wait_enabled,
+                    use_feed_scroll=use_feed_scroll,
+                    pre_filter_names=pre_filter_names,
+                    show_progress=show_progress,
+                    interactive_controls=interactive_controls
                 )
                 
                 # Update Job Manager Stats

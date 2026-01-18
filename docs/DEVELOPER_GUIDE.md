@@ -52,3 +52,11 @@ The frozen exe cannot run `python -m playwright install`.
 - `src/controller.py`: Thread synchronization primitives.
 - `scraper.spec`: Build configuration.
 - `gui_app.py`: UI and Process Management.
+
+For detailed technical documentation on each file, see:
+-   [**Entry Points**](code/entry_points.md)
+-   [**Scraping Engine**](code/leads_scraping.md)
+-   [**Data Handling**](code/sheets_utils.md)
+-   [**Database**](code/db.md)
+-   [**GUI Architecture**](code/gui_architecture.md)
+

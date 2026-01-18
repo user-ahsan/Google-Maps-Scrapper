@@ -7,6 +7,10 @@ import datetime
 import glob
 import re
 from dataclasses import dataclass, asdict, field
+from typing import Optional
+
+class TimeoutError(Exception):
+    pass
 
 # --- Configuration ---
 SHEET_NAME = "Gmaps Leads"  # The Google Sheet to save results to
@@ -102,20 +106,20 @@ DEFAULT_MAPPING = {
 @dataclass
 class Business:
     """holds business data"""
-    name: str = None
-    address: str = None
-    domain: str = None
-    website: str = None
-    phone_number: str = None
-    category: str = None
-    location: str = None
-    reviews_count: int = None
-    reviews_average: float = None
-    latitude: float = None
-    longitude: float = None
-    google_maps_link: str = None
-    scraped_query: str = None
-    scraped_at: str = None
+    name: Optional[str] = None
+    address: Optional[str] = None
+    domain: Optional[str] = None
+    website: Optional[str] = None
+    phone_number: Optional[str] = None
+    category: Optional[str] = None
+    location: Optional[str] = None
+    reviews_count: Optional[int] = None
+    reviews_average: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    google_maps_link: Optional[str] = None
+    scraped_query: Optional[str] = None
+    scraped_at: Optional[str] = None
     
     def __hash__(self):
         """Make Business hashable for duplicate detection.
@@ -138,6 +142,8 @@ class Business:
 
 import sys
 import time
+from typing import Optional
+
 if sys.platform != 'win32':
     import fcntl
 else:
@@ -145,25 +151,25 @@ else:
 
 class FileLock:
     """Simple cross-platform file locking."""
-    def __init__(self, filename, timeout=10):
+    def __init__(self, filename: str, timeout: int = 10):
         self.filename = filename 
         self.timeout = timeout
-        self.handle = None
+        self.handle: Optional[any] = None
         self.lock_file = f"{filename}.lock"
 
     def __enter__(self):
         # Create lock file if not exists
         if not os.path.exists(os.path.dirname(self.lock_file)):
-             os.makedirs(os.path.dirname(self.lock_file), exist_ok=True)
-             
+            os.makedirs(os.path.dirname(self.lock_file), exist_ok=True)
+              
         self.handle = open(self.lock_file, 'w')
         start_time = time.time()
         while True:
             try:
-                if sys.platform == 'win32':
+                if self.handle and sys.platform == 'win32':
                     # Lock first byte
                     msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
+                elif self.handle:
                     fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except (IOError, OSError):
@@ -174,13 +180,14 @@ class FileLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
-            if sys.platform == 'win32':
+            if self.handle and sys.platform == 'win32':
                 msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
+            elif self.handle:
                 fcntl.flock(self.handle, fcntl.LOCK_UN)
         except:
-            pass # Handle already closed
-        self.handle.close()
+            pass
+        if self.handle:
+            self.handle.close()
 
 @dataclass
 class BusinessList:
@@ -204,7 +211,7 @@ class BusinessList:
         Returns: pandas dataframe
         """
         df = pd.json_normalize(
-            (asdict(business) for business in self.business_list), sep="_"
+            [asdict(business) for business in self.business_list], sep="_"
         )
         
         # Apply text cleaning to all string columns as final safety layer
@@ -220,32 +227,9 @@ class BusinessList:
         Appends to existing file if present. Safe with File Locking.
         """
         os.makedirs(self.save_at, exist_ok=True)
-        # FORCE filename to 'Gmaps Leads' regardless of input to enforce single file
-        target_file = "Gmaps Leads"
+        # Use filename parameter if provided, otherwise default to 'Gmaps Leads'
+        target_file = filename if filename else "Gmaps Leads"
         path = f"{self.save_at}/{target_file}.csv"
-        
-        df = self.dataframe()
-        
-        # Enforce Schema here too for local consistency
-        if EXPECTED_HEADERS:
-            # Rename columns to match expected headers using default mapping logic
-            rename_map = {}
-            for internal, display in DEFAULT_MAPPING.items():
-                rename_map[internal] = display
-                
-            df = df.rename(columns=rename_map)
-            
-            # Ensure columns exist
-            for h in EXPECTED_HEADERS:
-                if h not in df.columns: df[h] = ""
-            
-            # Filter
-            df = df[EXPECTED_HEADERS]
-        
-        # USE LOCK for safe append
-        with FileLock(path):
-            header = not os.path.exists(path)
-            # Check if file is empty even if exists
             if os.path.exists(path) and os.path.getsize(path) == 0:
                 header = True
                 
@@ -297,7 +281,7 @@ def print_sheet_status(action, sheet_name="N/A", sheet_id="N/A", details=""):
     BOLD = '\033[1m'
     
     # Clean up ID if it's an object
-    if hasattr(sheet_id, 'id'): sheet_id = sheet_id.id
+    if sheet_id and hasattr(sheet_id, 'id'): sheet_id = sheet_id.id
     
     sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
     
@@ -313,8 +297,7 @@ def connect_to_sheets(credentials_file=CREDENTIALS_FILE):
         return None
 
     try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_file, scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_file)
         client = gspread.authorize(creds)
         return client
     except Exception as e:
@@ -472,8 +455,79 @@ def map_columns_to_sheet(df, worksheet):
         if h not in df.columns:
             df[h] = ""
             
-    # 3. Select ONLY Expected Headers in Order
-    final_df = df[EXPECTED_HEADERS].copy()
+    # 3. Dynamic Column Addition
+    # Check if df has columns that are NOT in existing_headers
+    df_cols = list(df.columns)
+    new_cols_to_add = [c for c in df_cols if c not in existing_headers]
+    
+    if new_cols_to_add:
+        print(f"   🛠️  Sheet Schema Update: Found {len(new_cols_to_add)} new columns: {new_cols_to_add}")
+        # Add them to the sheet header row
+        # We need to find the column index to start appending
+        next_col_idx = len(existing_headers) + 1
+        
+        # We can use update logic or append at specific cells
+        # Construct the range for new headers
+        # E.g. existing 10 cols, adding 2. Range starts at col 11 (K1)
+        # However, gspread uses A1 notation or row/col.
+        
+        # Simplest: Update cells in row 1
+        # Update existing_headers in memory + on sheet
+        # We assume headers are in row 1
+        
+        try:
+            # row=1, col=next_col_idx is where we start
+            # values needs to be a list of lists [[col1, col2]] for update? or just list for update_cell?
+            # update accepts range or list of lists.
+            # Convert col index to letters? No, row/col integers works for cell(), usually need range for update.
+            # Let's use individual updates for safety or batch update if possible.
+            # Or assume we can just get the range.
+            # Using gspread 'update' with list of lists is standard.
+            
+            # Convert column index to A1 notation would be complex without helper.
+            # But worksheet.update_cell(row, col, value) is easy but slow loop.
+            # worksheet.update(range_name, values)
+            
+            # We'll use the loop for simplicity if small number, or carefully construct range.
+            # Actually, `worksheet.resize(cols=total_cols)` might be needed if restricted?
+            # Usually strict limit isn't default but let's be safe.
+            
+            current_col_count = worksheet.col_count
+            needed_col_count = len(existing_headers) + len(new_cols_to_add)
+            if needed_col_count > current_col_count:
+                worksheet.resize(cols=needed_col_count + 5)
+            
+            # Batch update headers
+            # Range starting from (1, next_col_idx)
+            # We can use gspread's row/col update if available?
+            # worksheet.update(values=[new_cols_to_add], range_name=...?)
+            # Since gspread v6, methods changed. Let's use safe `update_cell` loop as fallback or find range.
+            # Actually, standard update takes `range_name` (e.g. 'D1:E1').
+            # Calculating A1 notation is annoying.
+            # Let's use `update_cell` for robustness right now as we are likely adding 1-2 cols max.
+            
+            col_offset = 0
+            for new_col in new_cols_to_add:
+                worksheet.update_cell(1, next_col_idx + col_offset, new_col)
+                col_offset += 1
+                
+            existing_headers.extend(new_cols_to_add)
+            print("   ✅ Updated Sheet Headers.")
+            
+        except Exception as e:
+            print(f"   ⚠️  Failed to add columns to sheet: {e}")
+
+    # 4. Reorder DF to match Final Sheet Headers (Existing + New)
+    # Any columns in DF that are not in existing_headers (should be none now) will be lost?
+    # No, we just added them.
+    # What if existing_headers has columns NOT in DF? We need to keep them (ignoring empty vals for them)
+    # We should return a DF that has ALL columns in existing_headers order.
+    
+    for h in existing_headers:
+        if h not in df.columns:
+            df[h] = ""
+            
+    final_df = df[existing_headers].copy()
     
     return final_df
 
@@ -600,8 +654,6 @@ def get_all_seen_urls(worksheet=None, local_dir='GMaps Data'):
         print(f"Done. Total unique (Online + Offline): {len(seen_urls)}")
     
     return seen_urls
-
-    return known_names_local
 
 def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
     """

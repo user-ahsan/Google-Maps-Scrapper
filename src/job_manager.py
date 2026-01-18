@@ -20,14 +20,58 @@ class JobManager:
         self.load_state()
 
     def load_state(self):
-        """Loads state from disk if it exists."""
+        """Loads state from disk if it exists with validation."""
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, 'r') as f:
-                    self.current_state = json.load(f)
+                    state = json.load(f)
+                    # Validate state structure
+                    if not self._validate_state(state):
+                        print("Warning: Job state file is invalid. Starting fresh.")
+                        return
+                    self.current_state = state
+            except json.JSONDecodeError as e:
+                print(f"Error loading job state (invalid JSON): {e}")
+                print("Warning: Job state file is corrupted. Starting fresh.")
             except Exception as e:
                 print(f"Error loading job state: {e}")
                 # If corrupt, we start fresh, keeping default current_state
+    
+    def _validate_state(self, state):
+        """Validates state file structure and data integrity."""
+        # Check required fields
+        required_fields = ["job_id", "timestamp", "completed_queries", "pending_queries", "total_leads_found", "status"]
+        for field in required_fields:
+            if field not in state:
+                print(f"Validation failed: Missing field '{field}' in job state")
+                return False
+        
+        # Validate data types
+        if not isinstance(state["completed_queries"], list):
+            print("Validation failed: completed_queries must be a list")
+            return False
+        
+        if not isinstance(state["pending_queries"], list):
+            print("Validation failed: pending_queries must be a list")
+            return False
+        
+        if not isinstance(state["total_leads_found"], (int, float)):
+            print("Validation failed: total_leads_found must be a number")
+            return False
+        
+        # Validate status
+        valid_statuses = ["IDLE", "RUNNING", "PAUSED", "COMPLETED", "STOPPED"]
+        if state["status"] not in valid_statuses:
+            print(f"Validation failed: Invalid status '{state['status']}'")
+            return False
+        
+        # Validate queries are strings
+        for query in state["completed_queries"] + state["pending_queries"]:
+            if not isinstance(query, str):
+                print(f"Validation failed: Query must be string, got {type(query)}")
+                return False
+        
+        return True
 
     def save_state(self):
         """Saves current state to disk."""

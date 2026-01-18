@@ -19,7 +19,7 @@ def test_env():
     for f in required_files:
         path = os.path.join(root_dir, f)
         exists = os.path.exists(path)
-        icon = "✅" if exists else "❌"
+        icon = "[OK]" if exists else "[FAIL]"
         print(f"{icon} {f}")
         if not exists:
             all_files_ok = False
@@ -28,27 +28,27 @@ def test_env():
     print("\nChecking Libraries...")
     try:
         import gspread
-        print("✅ gspread")
+        print("[OK] gspread")
     except ImportError:
-        print("❌ gspread missing")
+        print("[FAIL] gspread missing")
 
     try:
         import playwright
-        print("✅ playwright")
+        print("[OK] playwright")
     except ImportError:
-        print("❌ playwright missing")
+        print("[FAIL] playwright missing")
 
     try:
         import pandas
-        print("✅ pandas")
+        print("[OK] pandas")
     except ImportError:
-        print("❌ pandas missing")
+        print("[FAIL] pandas missing")
 
     print("="*60)
     if all_files_ok:
-        print("✅ Environment looks GOOD.")
+        print("[OK] Environment looks GOOD.")
     else:
-        print("⚠️ Enable to find some files.")
+        print("[WARN] Enable to find some files.")
 
 if __name__ == "__main__":
     test_env()

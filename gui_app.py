@@ -14,6 +14,7 @@ from src.config_manager import ConfigManager
 from src import resource_utils
 from src.logger import setup_logger
 from src.job_manager import JobManager
+from src.security_utils import validate_input
 
 # --- THEME SETUP ---
 ctk.set_appearance_mode("Dark")
@@ -65,10 +66,31 @@ class ScraperGUI(ctk.CTk):
         self.headless_var = ctk.BooleanVar(value=self.config.get("headless", True))
         self.csv_export_var = ctk.BooleanVar(value=self.config.get("export_csv", True))
         
+        # Scrolling Configuration
         self.sheet_behavior_var = ctk.StringVar(value=self.config.get("sheet_behavior", "Append"))
         self.max_scroll_time_var = ctk.StringVar(value=self.config.get("max_scroll_time", "300"))
-        self.scroll_wait_var = ctk.StringVar(value=self.config.get("scroll_wait", "3000")) # Default 3000ms
+        self.scroll_wait_var = ctk.StringVar(value=self.config.get("scroll_wait", "3000"))
+        self.scroll_amount_var = ctk.StringVar(value=self.config.get("scroll_amount_per_step", "10000"))
+        self.auto_skip_var = ctk.StringVar(value=self.config.get("auto_skip_timeout", "0"))
+        self.smart_wait_var = ctk.BooleanVar(value=self.config.get("smart_wait_enabled", True))
+        self.feed_scroll_var = ctk.BooleanVar(value=self.config.get("use_feed_scroll", True))
         self.max_retries_var = ctk.StringVar(value=self.config.get("max_scroll_retries", "5"))
+        
+        # Data Export Toggles
+        self.sheets_export_var = ctk.BooleanVar(value=self.config.get("export_sheets", True))
+        self.db_export_var = ctk.BooleanVar(value=self.config.get("export_db", True))
+        self.auto_upload_var = ctk.BooleanVar(value=self.config.get("auto_upload", False))
+        
+        # Behavior Toggles
+        self.auto_accept_var = ctk.BooleanVar(value=self.config.get("auto_accept", True))
+        self.manual_verify_var = ctk.BooleanVar(value=self.config.get("manual_verification", False))
+        self.interactive_var = ctk.BooleanVar(value=self.config.get("interactive_controls", True))
+        self.show_progress_var = ctk.BooleanVar(value=self.config.get("show_progress", True))
+        
+        # Performance Toggles
+        self.pre_filter_var = ctk.BooleanVar(value=self.config.get("pre_filter_names", True))
+        self.batch_db_var = ctk.BooleanVar(value=self.config.get("batch_db_ops", True))
+        self.cache_sheet_var = ctk.BooleanVar(value=self.config.get("cache_sheet_data", True))
 
         # --- LAYOUT CONSTRUCTION ---
         self.grid_rowconfigure(0, weight=1)
@@ -240,15 +262,40 @@ class ScraperGUI(ctk.CTk):
         ctk.CTkLabel(r_creds, text="Credentials JSON:", width=150, anchor="w").pack(side="left")
         ctk.CTkEntry(r_creds, textvariable=self.creds_file_path, width=220).pack(side="left")
         ctk.CTkButton(r_creds, text="Browse", width=70, command=self.browse_creds).pack(side="left", padx=10)
-
-        # Advanced
-        add_section("Advanced")
-        add_field("Max Scroll Time (s):", self.max_scroll_time_var)
-        add_field("Scroll Wait/Interval (ms):", self.scroll_wait_var)
-        add_field("Max Retries:", self.max_retries_var)
         
+        # Scrolling Configuration
+        add_section("Scrolling Configuration")
+        add_field("Scroll Amount Per Step (pixels):", self.scroll_amount_var)
+        add_field("Scroll Wait/Interval (ms):", self.scroll_wait_var)
+        add_field("Max Scroll Time (s):", self.max_scroll_time_var)
+        add_field("Auto-Skip Timeout (s, 0=disabled):", self.auto_skip_var)
+        add_field("Max Retries (no change):", self.max_retries_var)
+        add_switch("Smart Wait (element detection)", self.smart_wait_var)
+        add_switch("Use Feed Scroll Mode", self.feed_scroll_var)
+        
+        # Advanced (Legacy - moving Sheet Behavior)
         ctk.CTkLabel(f, text="Sheet Behavior:", width=150, anchor="w").pack(padx=40, pady=(10,0), anchor="w")
         ctk.CTkOptionMenu(f, values=["Append", "Overwrite", "New Sheet"], variable=self.sheet_behavior_var).pack(padx=40, pady=5, anchor="w")
+        
+        # Data Export Toggles
+        add_section("Data Export Toggles")
+        add_switch("Export to Google Sheets", self.sheets_export_var)
+        add_switch("Export to SQLite Database", self.db_export_var)
+        add_switch("Auto-upload on Complete", self.auto_upload_var)
+        
+        # Behavior Toggles
+        add_section("Behavior Toggles")
+        add_switch("Auto-accept URLs", self.auto_accept_var)
+        add_switch("Manual Verification", self.manual_verify_var)
+        add_switch("Interactive Controls", self.interactive_var)
+        add_switch("Show Progress Bars", self.show_progress_var)
+        
+        # Performance Toggles
+        add_section("Performance Toggles")
+        add_switch("Pre-filter by Known Names", self.pre_filter_var)
+        add_switch("Smart Wait for Element Load", self.smart_wait_var)
+        add_switch("Batch Database Operations", self.batch_db_var)
+        add_switch("Cache Sheet Data", self.cache_sheet_var)
 
         # System Tools
         add_section("System Tools")
@@ -306,6 +353,26 @@ class ScraperGUI(ctk.CTk):
         if not queries:
             messagebox.showerror("Error", "Please enter at least one keyword (one per line).")
             return
+        
+        # Validate each query
+        invalid_queries = []
+        for query in queries:
+            if not validate_input("search_query", query):
+                invalid_queries.append(query)
+        
+        if invalid_queries:
+            messagebox.showerror("Invalid Input", f"The following queries contain invalid characters:\n\n" + "\n".join(invalid_queries[:5]) + ("\n..." if len(invalid_queries) > 5 else ""))
+            return
+        
+        # Validate numeric inputs
+        try:
+            max_results = int(self.max_results_var.get())
+            if max_results < 0 or max_results > 100000:
+                messagebox.showerror("Invalid Input", "Max Results must be between 0 and 100,000")
+                return
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Max Results must be a valid number")
+            return
             
         self.run_job(queries=queries, resume=False)
 
@@ -339,7 +406,21 @@ class ScraperGUI(ctk.CTk):
             "scroll_wait": int(self.scroll_wait_var.get()),
             "max_scroll_retries": int(self.max_retries_var.get()),
             "resume": resume,
-            "stats_queue": self.stats_queue
+            "stats_queue": self.stats_queue,
+            "scroll_amount_per_step": int(self.scroll_amount_var.get()) if self.scroll_amount_var.get().isdigit() else 10000,
+            "auto_skip_timeout": int(self.auto_skip_var.get()) if self.auto_skip_var.get().isdigit() else 0,
+            "smart_wait_enabled": self.smart_wait_var.get(),
+            "use_feed_scroll": self.feed_scroll_var.get(),
+            "export_sheets": self.sheets_export_var.get(),
+            "export_db": self.db_export_var.get(),
+            "auto_upload": self.auto_upload_var.get(),
+            "auto_accept": self.auto_accept_var.get(),
+            "manual_verification": self.manual_verify_var.get(),
+            "interactive_controls": self.interactive_var.get(),
+            "show_progress": self.show_progress_var.get(),
+            "pre_filter_names": self.pre_filter_var.get(),
+            "batch_db_ops": self.batch_db_var.get(),
+            "cache_sheet_data": self.cache_sheet_var.get(),
         }
         
         self.select_frame("Dashboard") # Auto-switch to logs or Dashboard? User said hide logs.
@@ -366,7 +447,6 @@ class ScraperGUI(ctk.CTk):
             
             main_gui_wrapper.run_gui_mode(
                 input_queries=args.get("input_queries"),
-                # We can skip input_file if queries present
                 creds_file=args["creds_file"],
                 total=args["total"],
                 headless=args["headless"],
@@ -376,7 +456,21 @@ class ScraperGUI(ctk.CTk):
                 max_scroll_time=args["max_scroll_time"],
                 scroll_wait=args["scroll_wait"],
                 resume=args["resume"],
-                stats_queue=args["stats_queue"]
+                stats_queue=args["stats_queue"],
+                scroll_amount_per_step=args["scroll_amount_per_step"],
+                auto_skip_timeout=args["auto_skip_timeout"],
+                smart_wait_enabled=args["smart_wait_enabled"],
+                use_feed_scroll=args["use_feed_scroll"],
+                export_sheets=args["export_sheets"],
+                export_db=args["export_db"],
+                auto_upload=args["auto_upload"],
+                auto_accept=args["auto_accept"],
+                manual_verification=args["manual_verification"],
+                interactive_controls=args["interactive_controls"],
+                show_progress=args["show_progress"],
+                pre_filter_names=args["pre_filter_names"],
+                batch_db_ops=args["batch_db_ops"],
+                cache_sheet_data=args["cache_sheet_data"]
             )
             print("--- JOB FINISHED ---")
             self.after(0, lambda: self.lbl_status.configure(text="COMPLETED", text_color="#00FF00"))
@@ -447,27 +541,72 @@ class ScraperGUI(ctk.CTk):
         os.startfile(os.path.abspath(folder))
 
     def run_diagnostics_gui(self):
-        """Run the diagnostics check in the main console."""
-        self.select_frame("Logs")
-        self.log_to_console("\n--- RUNNING DIAGNOSTICS ---")
+        """Run diagnostics check with test selection popup."""
+        # Create test selection popup
+        test_window = ctk.CTkToplevel(self)
+        test_window.title("Select Tests")
+        test_window.geometry("400x500")
+        test_window.attributes("-topmost", True)
         
-        def diag_thread():
-            try:
-                # Redirect Stdout
-                original_stdout = sys.stdout
-                sys.stdout = TextRedirector(self.log_queue)
+        ctk.CTkLabel(test_window, text="Select Tests to Run", font=("Arial", 16, "bold")).pack(pady=20)
+        
+        test_vars = {}
+        tests = [
+            ("Config File Validation", "test_config.py"),
+            ("Headless Scraping Test", "test_headless_scrape.py"),
+            ("Headed Scraping Test", "test_headed_scrape.py"),
+            ("Data Extraction Test", "test_data_extraction.py"),
+        ]
+        
+        scrollable_frame = ctk.CTkScrollableFrame(test_window, width=350, height=300)
+        scrollable_frame.pack(pady=10)
+        
+        for test_name, test_file in tests:
+            var = ctk.BooleanVar(value=True)
+            test_vars[test_file] = var
+            ctk.CTkCheckBox(scrollable_frame, text=test_name, variable=var).pack(pady=5, anchor="w")
+        
+        button_frame = ctk.CTkFrame(test_window, fg_color="transparent")
+        button_frame.pack(pady=10)
+        
+        def run_tests():
+            selected_tests = [f for f, var in test_vars.items() if var.get()]
+            test_window.destroy()
+            self.select_frame("Logs")
+            self.log_to_console("\n--- RUNNING DIAGNOSTICS ---")
+            
+            def run_test_thread():
+                import subprocess
+                import sys
                 
-                # Use main from root
-                import main
-                main.run_diagnostics(force_offline=True) 
+                for test_file in selected_tests:
+                    test_path = os.path.join("test", test_file)
+                    if os.path.exists(test_path):
+                        try:
+                            self.log_to_console(f"\n🔍 Running: {test_file}")
+                            result = subprocess.run(
+                                [sys.executable, test_path],
+                                capture_output=True,
+                                text=True,
+                                timeout=60
+                            )
+                            if result.returncode == 0:
+                                self.log_to_console(f"✅ {test_file} PASSED")
+                                self.log_to_console(result.stdout)
+                            else:
+                                self.log_to_console(f"❌ {test_file} FAILED")
+                                self.log_to_console(result.stderr)
+                        except Exception as e:
+                            self.log_to_console(f"❌ {test_file} ERROR: {e}")
+                    else:
+                        self.log_to_console(f"⚠️  {test_file} not found")
                 
-                print("--- DIAGNOSTICS COMPLETE ---")
-            except Exception as e:
-                print(f"Diagnostics Error: {e}")
-            finally:
-                sys.stdout = original_stdout
-
-        threading.Thread(target=diag_thread, daemon=True).start()
+                self.log_to_console("\n--- DIAGNOSTICS COMPLETE ---")
+            
+            threading.Thread(target=run_test_thread, daemon=True).start()
+        
+        ctk.CTkButton(button_frame, text="Run Selected Tests", command=run_tests, fg_color="#2CC985", width=150).pack(side="left", padx=5)
+        ctk.CTkButton(button_frame, text="Cancel", command=test_window.destroy, fg_color="#555555", width=100).pack(side="left", padx=5)
 
     def install_browsers_gui(self):
         """Launches a separate process to install browsers with Visual Feedback."""
@@ -554,7 +693,21 @@ class ScraperGUI(ctk.CTk):
             "sheet_behavior": self.sheet_behavior_var.get(),
             "max_scroll_time": self.max_scroll_time_var.get(),
             "scroll_wait": self.scroll_wait_var.get(),
-            "max_scroll_retries": self.max_retries_var.get()
+            "max_scroll_retries": self.max_retries_var.get(),
+            "scroll_amount_per_step": self.scroll_amount_var.get(),
+            "auto_skip_timeout": self.auto_skip_var.get(),
+            "smart_wait_enabled": self.smart_wait_var.get(),
+            "use_feed_scroll": self.feed_scroll_var.get(),
+            "export_sheets": self.sheets_export_var.get(),
+            "export_db": self.db_export_var.get(),
+            "auto_upload": self.auto_upload_var.get(),
+            "auto_accept": self.auto_accept_var.get(),
+            "manual_verification": self.manual_verify_var.get(),
+            "interactive_controls": self.interactive_var.get(),
+            "show_progress": self.show_progress_var.get(),
+            "pre_filter_names": self.pre_filter_var.get(),
+            "batch_db_ops": self.batch_db_var.get(),
+            "cache_sheet_data": self.cache_sheet_var.get(),
         }
         self.config_manager.save_config(data)
         if not silent:
