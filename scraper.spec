@@ -99,7 +99,7 @@ exe = EXE(
     analysis.zipfiles,
     analysis.datas,
     [],
-    name='GoogleMapsScraper',
+    name='GoogleMapsScraper_v2.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
