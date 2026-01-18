@@ -453,7 +453,7 @@ def escape_sql_like(value: str) -> str:
     """
     Escapes a value for safe use in LIKE queries.
     """
-    return sanitize_for_sql(value).replace('%', '%%').replace('_', '\\_'))
+    return sanitize_for_sql(value).replace('%', '%%').replace('_', '\\_')
 
 def validate_sql_identifier(identifier: str) -> Tuple[bool, str, str]:
     """
