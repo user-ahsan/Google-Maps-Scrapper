@@ -1,10 +1,24 @@
-# Made by user-ahsan
+import os
+import sys
+
+# Ensure UTF-8 output encoding for emojis on Windows consoles
+try:
+    if sys.stdout:
+        reconfig_stdout = getattr(sys.stdout, 'reconfigure', None)
+        if callable(reconfig_stdout):
+            reconfig_stdout(encoding='utf-8', errors='replace')
+    if sys.stderr:
+        reconfig_stderr = getattr(sys.stderr, 'reconfigure', None)
+        if callable(reconfig_stderr):
+            reconfig_stderr(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 import datetime
 from playwright.sync_api import sync_playwright
 import argparse
-import os
-import sys
 import subprocess
+
 
 try:
     from fake_useragent import UserAgent
@@ -256,31 +270,36 @@ def main():
 
     total = args.total if args.total else 1_000_000
     
+    # Dynamic User Agent & Config
+    from src.config_manager import ConfigManager
+    config_mgr = ConfigManager()
+    config = config_mgr.get_config()
+    
+    is_headless = config.get("headless", False)
+    if args.headed:
+        is_headless = False
+
     # 3. Start Orchestration
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not args.headed)
-        
-        # Dynamic User Agent with Persistence
-        from src.config_manager import ConfigManager
-        config_mgr = ConfigManager()
-        config = config_mgr.get_config()
+        browser = p.chromium.launch(headless=is_headless)
         
         stored_ua = config.get("user_agent", "")
         ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         
-        if stored_ua:
+        if stored_ua and ("Mobile" not in stored_ua and "iPhone" not in stored_ua and "Android" not in stored_ua):
             # Use stored User-Agent from config (consistency)
             ua = stored_ua
             print(f"   🕵️  User-Agent: {ua} (Stored in config)")
         elif UserAgent:
             try:
-                # Generate new User-Agent and store it
-                ua_gen = UserAgent()
+                # Generate new Desktop User-Agent and store it
+                ua_gen = UserAgent(platforms='pc')
                 ua = ua_gen.random
                 config_mgr.set("user_agent", ua)
                 print(f"   🕵️  User-Agent: {ua} (Generated and stored)")
             except Exception as e:
-                 print(f"   🕵️  User-Agent: {ua} (Fallback - Generator Error: {e})")
+                ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                print(f"   🕵️  User-Agent: {ua} (Fallback - Generator Error: {e})")
         else:
             print(f"   🕵️  User-Agent: {ua} (Fixed - Library Missing)")
 

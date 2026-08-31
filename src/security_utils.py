@@ -5,6 +5,7 @@ Provides input validation, sanitization, and rate limiting.
 
 import re
 import os
+import json
 from typing import Optional, List, Tuple, Callable
 import logging
 from functools import wraps
@@ -18,15 +19,15 @@ PATH_ALLOWED_CHARS = r"^[a-zA-Z0-9_\-./\\]+$"
 
 # Phone number patterns
 PHONE_PATTERNS = [
-    r'^\+?[\d\s\-\(\)\.\s]+$'  # +1 (555) 123-4567
-    r'^[\d\s\-\(\)\.\s]+$'           # 555-123-4567
-    r'^0\d{9,10}\s*$'            # 020 area codes
+    r'^\+?[\d\s\-\(\)\.\s]+$',  # +1 (555) 123-4567
+    r'^[\d\s\-\(\)\.\s]+$',     # 555-123-4567
+    r'^0\d{9,10}\s*$'           # 020 area codes
 ]
 
 # URL patterns
 URL_PATTERN = re.compile(
     r'^https?://'  # Protocol
-    r'(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z0-9\-._~:/?#\[\]\@!$&\(\)\s]*+$'  # Domain and Path
+    r'(www\.)?[a-zA-Z0-9-]+\.[a-zA-Z0-9\-._~:/?#\[\]@!$&\(\)\s]*$'  # Domain and Path
 )
 
 # Search query patterns
@@ -366,7 +367,7 @@ def validate_config_values(
         ('max_scroll_retries', max_scroll_retries, 0, 20),
     ]
     
-    for key, value, default_val, min_val, max_val in numeric_validations:
+    for key, value, min_val, max_val in numeric_validations:
         if value is not None:
             result = validate_numeric_value(value, key, min_val, max_val)
             if not result[0]:
@@ -378,7 +379,7 @@ def validate_config_values(
         ('theme', theme, ['Dark', 'Light', 'System']),
     ]
     
-    for key, value, default_val, allowed_values in enum_validations:
+    for key, value, allowed_values in enum_validations:
         if value is not None:
             result = validate_enum_value(value, key, allowed_values)
             if not result[0]:
@@ -426,13 +427,14 @@ def validate_config_file(config_path: str = "config.json") -> Tuple[bool, List[s
         return False, [f"Configuration file not found: {config_path}"]
     
     try:
-        import json
         with open(config_path, 'r') as f:
             config = json.load(f)
     except json.JSONDecodeError as e:
         return False, [f"Configuration file is not valid JSON: {e}"]
     except Exception as e:
         return False, [f"Error reading config file: {e}"]
+    
+    errors = []
     
     # Validate required keys
     required_keys = [

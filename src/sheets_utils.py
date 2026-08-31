@@ -142,19 +142,24 @@ class Business:
 
 import sys
 import time
-from typing import Optional
+from typing import Optional, Any
 
-if sys.platform != 'win32':
+try:
     import fcntl
-else:
+except ImportError:
+    fcntl = None
+
+try:
     import msvcrt
+except ImportError:
+    msvcrt = None
 
 class FileLock:
     """Simple cross-platform file locking."""
     def __init__(self, filename: str, timeout: int = 10):
         self.filename = filename 
         self.timeout = timeout
-        self.handle: Optional[any] = None
+        self.handle: Optional[Any] = None
         self.lock_file = f"{filename}.lock"
 
     def __enter__(self):
@@ -166,11 +171,13 @@ class FileLock:
         start_time = time.time()
         while True:
             try:
-                if self.handle and sys.platform == 'win32':
+                if self.handle and sys.platform == 'win32' and msvcrt:
                     # Lock first byte
                     msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
-                elif self.handle:
-                    fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                elif self.handle and fcntl:
+                    lock_ex = getattr(fcntl, 'LOCK_EX', 2)
+                    lock_nb = getattr(fcntl, 'LOCK_NB', 4)
+                    getattr(fcntl, 'flock')(self.handle, lock_ex | lock_nb)
                 break
             except (IOError, OSError):
                 if time.time() - start_time > self.timeout:
@@ -180,11 +187,12 @@ class FileLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
-            if self.handle and sys.platform == 'win32':
+            if self.handle and sys.platform == 'win32' and msvcrt:
                 msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
-            elif self.handle:
-                fcntl.flock(self.handle, fcntl.LOCK_UN)
-        except:
+            elif self.handle and fcntl:
+                lock_un = getattr(fcntl, 'LOCK_UN', 8)
+                getattr(fcntl, 'flock')(self.handle, lock_un)
+        except Exception:
             pass
         if self.handle:
             self.handle.close()
@@ -291,7 +299,7 @@ def print_sheet_status(action, sheet_name="N/A", sheet_id="N/A", details=""):
     BOLD = '\033[1m'
     
     # Clean up ID if it's an object
-    if sheet_id and hasattr(sheet_id, 'id'): sheet_id = sheet_id.id
+    sheet_id = getattr(sheet_id, 'id', sheet_id)
     
     sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}"
     
@@ -308,7 +316,7 @@ def connect_to_sheets(credentials_file=CREDENTIALS_FILE):
 
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_file)
-        client = gspread.authorize(creds)
+        client = gspread.authorize(creds)  # type: ignore
         return client
     except Exception as e:
         print(f"Error connecting to sheets: {e}")
@@ -665,7 +673,7 @@ def get_all_seen_urls(worksheet=None, local_dir='GMaps Data'):
     
     return seen_urls
 
-def get_all_known_names(worksheet=None, local_dir='GMaps Data'):
+def get_all_known_names(worksheet=None, local_dir: Optional[str] = 'GMaps Data'):
     """
     Returns a set of all known Business Names (normalized to lowercase) 
     from both online sheet and local DB (SQLite).
