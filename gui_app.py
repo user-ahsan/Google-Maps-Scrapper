@@ -60,7 +60,7 @@ class ScraperGUI(ctk.CTk):
 
         # --- CONFIGURATION ---
         self.config_manager = ConfigManager()
-        self.config: Dict[str, Any] = self.config_manager.load_config()
+        self.app_config: Dict[str, Any] = self.config_manager.load_config()
         self.logger = setup_logger("GUILogger")
         self.job_manager = JobManager()
 
@@ -76,39 +76,39 @@ class ScraperGUI(ctk.CTk):
         self.active_frame: str | None = None
 
         # General Variables (explicit master=self to prevent deallocator race conditions)
-        self.input_file_path = ctk.StringVar(master=self, value=self.config.get("input_file", ""))
-        self.creds_file_path = ctk.StringVar(master=self, value=self.config.get("creds_file", "credentials.json"))
-        self.max_results_var = ctk.StringVar(master=self, value=str(self.config.get("max_results", "100")))
-        self.headless_var = ctk.BooleanVar(master=self, value=bool(self.config.get("headless", True)))
-        self.csv_export_var = ctk.BooleanVar(master=self, value=bool(self.config.get("export_csv", True)))
+        self.input_file_path = ctk.StringVar(master=self, value=str(self.app_config.get("input_file", "")))
+        self.creds_file_path = ctk.StringVar(master=self, value=str(self.app_config.get("creds_file", "credentials.json")))
+        self.max_results_var = ctk.StringVar(master=self, value=str(self.app_config.get("max_results", "100")))
+        self.headless_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("headless", True)))
+        self.csv_export_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("export_csv", True)))
 
         # Scrolling Configuration
-        self.sheet_behavior_var = ctk.StringVar(master=self, value=self.config.get("sheet_behavior", "Append"))
-        self.max_scroll_time_var = ctk.StringVar(master=self, value=str(self.config.get("max_scroll_time", "300")))
-        self.scroll_wait_var = ctk.StringVar(master=self, value=str(self.config.get("scroll_wait", "3000")))
+        self.sheet_behavior_var = ctk.StringVar(master=self, value=str(self.app_config.get("sheet_behavior", "Append")))
+        self.max_scroll_time_var = ctk.StringVar(master=self, value=str(self.app_config.get("max_scroll_time", "300")))
+        self.scroll_wait_var = ctk.StringVar(master=self, value=str(self.app_config.get("scroll_wait", "3000")))
         self.scroll_amount_var = ctk.StringVar(
-            master=self, value=str(self.config.get("scroll_amount_per_step", "10000"))
+            master=self, value=str(self.app_config.get("scroll_amount_per_step", "10000"))
         )
-        self.auto_skip_var = ctk.StringVar(master=self, value=str(self.config.get("auto_skip_timeout", "0")))
-        self.smart_wait_var = ctk.BooleanVar(master=self, value=bool(self.config.get("smart_wait_enabled", True)))
-        self.feed_scroll_var = ctk.BooleanVar(master=self, value=bool(self.config.get("use_feed_scroll", True)))
-        self.max_retries_var = ctk.StringVar(master=self, value=str(self.config.get("max_scroll_retries", "5")))
+        self.auto_skip_var = ctk.StringVar(master=self, value=str(self.app_config.get("auto_skip_timeout", "0")))
+        self.smart_wait_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("smart_wait_enabled", True)))
+        self.feed_scroll_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("use_feed_scroll", True)))
+        self.max_retries_var = ctk.StringVar(master=self, value=str(self.app_config.get("max_scroll_retries", "5")))
 
         # Data Export Toggles
-        self.sheets_export_var = ctk.BooleanVar(master=self, value=bool(self.config.get("export_sheets", True)))
-        self.db_export_var = ctk.BooleanVar(master=self, value=bool(self.config.get("export_db", True)))
-        self.auto_upload_var = ctk.BooleanVar(master=self, value=bool(self.config.get("auto_upload", False)))
+        self.sheets_export_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("export_sheets", True)))
+        self.db_export_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("export_db", True)))
+        self.auto_upload_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("auto_upload", False)))
 
         # Behavior Toggles
-        self.auto_accept_var = ctk.BooleanVar(master=self, value=bool(self.config.get("auto_accept", True)))
-        self.manual_verify_var = ctk.BooleanVar(master=self, value=bool(self.config.get("manual_verification", False)))
-        self.interactive_var = ctk.BooleanVar(master=self, value=bool(self.config.get("interactive_controls", True)))
-        self.show_progress_var = ctk.BooleanVar(master=self, value=bool(self.config.get("show_progress", True)))
+        self.auto_accept_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("auto_accept", True)))
+        self.manual_verify_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("manual_verification", False)))
+        self.interactive_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("interactive_controls", True)))
+        self.show_progress_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("show_progress", True)))
 
         # Performance Toggles
-        self.pre_filter_var = ctk.BooleanVar(master=self, value=bool(self.config.get("pre_filter_names", True)))
-        self.batch_db_var = ctk.BooleanVar(master=self, value=bool(self.config.get("batch_db_ops", True)))
-        self.cache_sheet_var = ctk.BooleanVar(master=self, value=bool(self.config.get("cache_sheet_data", True)))
+        self.pre_filter_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("pre_filter_names", True)))
+        self.batch_db_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("batch_db_ops", True)))
+        self.cache_sheet_var = ctk.BooleanVar(master=self, value=bool(self.app_config.get("cache_sheet_data", True)))
 
         # --- LAYOUT CONSTRUCTION ---
         self.grid_rowconfigure(0, weight=1)
