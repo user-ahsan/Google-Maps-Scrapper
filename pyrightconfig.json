@@ -3,8 +3,18 @@
     "venv": "venv",
     "include": [
         "src",
-        "main.py",
+        "test",
         "gui_app.py",
-        "test"
+        "main.py",
+        "main_gui_wrapper.py",
+        "rthook_tkinter.py"
+    ],
+    "exclude": [
+        "venv",
+        ".venv",
+        ".pytest_cache",
+        "GMaps Data",
+        "build",
+        "dist"
     ]
 }

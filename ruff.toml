@@ -1,0 +1,20 @@
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line length handled flexibly for XPath/URLs
+    "B008",  # function call in default arg
+    "B028",  # no-explicit-stacklevel
+    "UP006", # typing generics compatibility
+    "UP035", # typing import compatibility
+]

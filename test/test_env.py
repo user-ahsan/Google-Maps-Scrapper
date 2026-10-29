@@ -1,20 +1,21 @@
 import os
 import sys
 
+
 def test_env():
     print("="*60)
     print("   ENVIRONMENT TEST   ")
     print("="*60)
-    
+
     # 1. Check Python
     print(f"Python Version: {sys.version.split()[0]}")
-    
+
     # 2. Check Files
-    required_files = ['credentials.json', 'input.txt', 'leads_scrapping.py', 'main.py']
+    required_files = ['credentials.json', 'input.txt', os.path.join('src', 'leads_scraping.py'), 'main.py']
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    
+
     print(f"Root Dir: {root_dir}")
-    
+
     all_files_ok = True
     for f in required_files:
         path = os.path.join(root_dir, f)
@@ -23,23 +24,23 @@ def test_env():
         print(f"{icon} {f}")
         if not exists:
             all_files_ok = False
-            
+
     # 3. Check Imports
     print("\nChecking Libraries...")
     try:
-        import gspread
+        import gspread  # noqa: F401
         print("[OK] gspread")
     except ImportError:
         print("[FAIL] gspread missing")
 
     try:
-        import playwright
+        import playwright  # noqa: F401
         print("[OK] playwright")
     except ImportError:
         print("[FAIL] playwright missing")
 
     try:
-        import pandas
+        import pandas  # noqa: F401
         print("[OK] pandas")
     except ImportError:
         print("[FAIL] pandas missing")

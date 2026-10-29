@@ -14,11 +14,10 @@ try:
 except Exception:
     pass
 
-import datetime
-from playwright.sync_api import sync_playwright
 import argparse
 import subprocess
 
+from playwright.sync_api import sync_playwright
 
 try:
     from fake_useragent import UserAgent
@@ -27,10 +26,8 @@ except ImportError:
 
 # Import Refactored Modules
 try:
-    from src import sheets_utils
-    from src import leads_scraping
-    from src import db
-    from src.security_utils import validate_input, validate_config_file
+    from src import db, leads_scraping, sheets_utils
+    from src.security_utils import validate_config_file, validate_input
     # from src import resource_utils # Optional utility
 except ImportError as e:
     print(f"CRITICAL ERROR: Could not import modules: {e}")
@@ -47,14 +44,14 @@ def run_diagnostics(force_offline=False):
     # 1. Browser Connectivity Test
     print("1. Testing Browser Environment (Headless)...", end=" ")
     browser_ready = False
-    
+
     def try_launch():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto("https://www.google.com", timeout=10000)
             browser.close()
-            
+
     try:
         try_launch()
         print("✅ PASS")
@@ -62,17 +59,17 @@ def run_diagnostics(force_offline=False):
     except Exception as e:
         print(f"\n   ⚠️  Browser Launch Failed: {e}")
         print("   🛠️  Attempting to auto-install Playwright binaries...")
-        
+
         try:
             import subprocess
             # Install chromium specifically to keep size down
             subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
             print("   ✅ Installation complete. Retrying launch...")
-            
+
             try_launch()
             print("   ✅ PASS (Recovered)")
             browser_ready = True
-            
+
         except Exception as install_error:
             print(f"   ❌ FATAL: Auto-install failed: {install_error}")
             print("   -> Tip: Run 'playwright install chromium' manually.")
@@ -81,7 +78,7 @@ def run_diagnostics(force_offline=False):
     print("2. Testing Google Sheets Connection...", end=" ")
     sheets_client = None
     online_mode = False
-    
+
     if force_offline:
         print("⏩ SKIPPED (Offline Mode Force)")
     else:
@@ -94,7 +91,7 @@ def run_diagnostics(force_offline=False):
         print("   -> Could not connect to Google Sheets. Will run in OFFLINE mode.")
 
     print("-" * 50)
-    
+
     # Initialize Local DB
     print("3. Initializing Local Database...", end=" ")
     try:
@@ -108,42 +105,42 @@ def run_diagnostics(force_offline=False):
 def sync_offline_data(sheets_client):
     """Check for existing CSVs and upload them if possible."""
     print("\n☁️ Checking for offline data to sync...")
-    
+
     base_dir = 'GMaps Data'
     target_csv = os.path.join(base_dir, 'Gmaps Leads.csv')
-    
+
     if not os.path.exists(target_csv):
         print("   No 'Gmaps Leads.csv' found.")
         return
 
-    print(f"   Found main CSV file. Syncing...")
-    
+    print("   Found main CSV file. Syncing...")
+
     worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
     if not worksheet:
         print("   Could not access worksheet for sync.")
         return
 
-    print(f"   Synced with Sheets. Local file used.")
+    print("   Synced with Sheets. Local file used.")
 
-    # We use a FileLock here to prevent multiple scraper instances from 
+    # We use a FileLock here to prevent multiple scraper instances from
     # trying to sync the SAME large CSV to Sheets at the exact same startup time.
     lock_path = os.path.join(base_dir, 'sync.lock')
-    
+
     try:
         print("   🔒 Acquiring sync lock...", end=" ")
         with sheets_utils.FileLock(lock_path, timeout=5):
             print("Acquired.")
-            
+
             import pandas as pd
             df = pd.read_csv(target_csv)
             if df.empty:
                 print("   File is empty.")
                 return
-            
+
             print(f"   Syncing {os.path.basename(target_csv)}...", end=" ")
             added, dupe = sheets_utils.upload_data_to_sheet(worksheet, df)
             print(f"Done. (+{added}, {dupe} dupes)")
-            
+
     except sheets_utils.TimeoutError:
          print("\n   ⚠️  Could not acquire sync lock (Another instance is syncing?). Skipping sync.")
     except Exception as e:
@@ -159,9 +156,9 @@ def main():
     parser.add_argument("-offline", "--offline", action="store_true", help="Force offline mode (Skip Sheets Sync)")
     # NEW: Internal flag for self-installing browsers
     parser.add_argument("--install-browsers", action="store_true", help="INTERNAL: Run browser installer and exit")
-    
+
     args = parser.parse_args()
-    
+
     # Validate config file
     try:
         validate_config_file("config.json")
@@ -169,12 +166,12 @@ def main():
     except Exception as e:
         print(f"⚠️  Config validation warning: {e}")
         print("   Using default values for invalid config entries.")
-    
+
     # Validate command line arguments
     if args.total and (args.total < 0 or args.total > 100000):
         print("⚠️  Warning: total should be between 0 and 100,000. Using default.")
         args.total = 1_000_000
-    
+
     if args.search:
         if not validate_input("search_query", args.search):
             print("❌ Invalid search query. Contains potentially harmful characters.")
@@ -193,7 +190,7 @@ def main():
             else:
                 # In development, just run the command
                 subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
-                
+
             print(">>> INSTALLATION SUCCESSFUL")
             sys.exit(0)
         except Exception as e:
@@ -209,11 +206,11 @@ def main():
              pass # Auto-proceed if not manual mode
         else:
              input("\n❌ Browser test failed. Check errors above. Press Enter to try anyway (or Ctrl+C to quit)...")
-    
+
     if online_mode and sheets_client:
         # 2. Sync Offline Data
         sync_offline_data(sheets_client)
-        
+
         # 3. Auto-Prune Duplicates (Maintenance)
         worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
         if worksheet:
@@ -224,11 +221,11 @@ def main():
              resp = input("   Continue? (Y/n): ")
              if resp.lower() == 'n':
                  sys.exit()
-    
+
     # --- OPTIMIZATION: Pre-load SEEN NAMES (Granular) ---
     known_names_sheet = set()
     known_names_local = set()
-    
+
     # 1. Local Data (DB init)
     print("   🧠 Initializing Local Database...", end=" ")
     from src import db
@@ -236,7 +233,7 @@ def main():
     # Migration Check
     csv_path = os.path.join('GMaps Data', 'Gmaps Leads.csv')
     db.import_csv_if_empty(csv_path)
-    
+
     known_names_local = db.get_known_names()
     print(f"[{len(known_names_local)} records]")
 
@@ -245,36 +242,41 @@ def main():
     if online_mode and sheets_client:
         worksheet = sheets_utils.get_or_create_worksheet(sheets_client)
         print("   🧠 Loading Sheet Data for deduplication...", end=" ")
-        known_names_sheet = sheets_utils.get_all_known_names(worksheet, local_dir=None) 
+        known_names_sheet = sheets_utils.get_all_known_names(worksheet, local_dir=None)
         print(f"[{len(known_names_sheet)} records]")
-    
+
     # Combined for global stats if needed, or just pass both
     # ----------------------------------------
-    
+
     # Determine Search List
     search_list = []
     if args.search:
         search_list = [args.search]
-    
+
     if not search_list:
         # read search from input.txt file
         input_file_name = 'input.txt'
         input_file_path = os.path.join(os.getcwd(), input_file_name)
         if os.path.exists(input_file_path):
-            with open(input_file_path, 'r') as file:
-                search_list = [line.strip() for line in file.readlines() if line.strip()]
-                
+            with open(input_file_path, encoding='utf-8') as file:
+                raw_queries = [line.strip() for line in file if line.strip()]
+            for q in raw_queries:
+                if validate_input("search_query", q):
+                    search_list.append(q)
+                else:
+                    print(f"⚠️  Skipping invalid query from input.txt: {q[:40]}...")
+
         if len(search_list) == 0:
             print('Error occured: You must either pass the -s search argument, or add searches to input.txt')
             sys.exit()
 
     total = args.total if args.total else 1_000_000
-    
+
     # Dynamic User Agent & Config
     from src.config_manager import ConfigManager
     config_mgr = ConfigManager()
     config = config_mgr.get_config()
-    
+
     is_headless = config.get("headless", False)
     if args.headed:
         is_headless = False
@@ -282,10 +284,10 @@ def main():
     # 3. Start Orchestration
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=is_headless)
-        
+
         stored_ua = config.get("user_agent", "")
         ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        
+
         if stored_ua and ("Mobile" not in stored_ua and "iPhone" not in stored_ua and "Android" not in stored_ua):
             # Use stored User-Agent from config (consistency)
             ua = stored_ua
@@ -306,7 +308,7 @@ def main():
         page = browser.new_page(locale="en-GB", user_agent=ua)
 
         page.goto("https://www.google.com/maps", timeout=20000)
-        
+
         for index, search_for in enumerate(search_list):
             try:
                 print(f"\n-----\n🔎 Processing Query {index+1}/{len(search_list)}: {search_for}")
@@ -314,46 +316,46 @@ def main():
                 # REFACTORED CALL: Delegate scraping to module
                 # We pass existing keys helper if needed, but scrape_data mainly returns a list.
                 # Real-time dedupe in scrape_data requires keys.
-                
+
                 # 1. Refresh Deduplication Data (Race Condition Fix)
                 # We load this PER QUERY to ensure we know about data added by other instances/threads.
                 print("   🔄 Refreshing local/online data for deduplication...", end=" ")
-                
+
                 # [DB] Use DB for fast local lookups
                 # db imported at top-level
                 known_names_local = db.get_known_names()
-                
+
                 known_names_sheet = set()
                 existing_keys = set()
-                
+
                 if online_mode and worksheet:
                      # print("Fetching real-time existing records...")
                      existing_keys = sheets_utils.get_existing_keys(worksheet)
                      known_names_sheet = sheets_utils.get_all_known_names(worksheet, local_dir=None)
-                
+
                 print(f"[Done. Local (DB): {len(known_names_local)} | Online: {len(known_names_sheet)}]")
 
                 # Scrape
                 business_list_obj = leads_scraping.scrape_data(
-                    page, 
-                    search_for, 
-                    total, 
-                    existing_keys, 
-                    known_names_sheet=known_names_sheet, 
+                    page,
+                    search_for,
+                    total,
+                    existing_keys,
+                    known_names_sheet=known_names_sheet,
                     known_names_local=known_names_local,
                     auto_accept=not args.manual
                 )
-                
+
                 # Save to DB & CSV
                 # The business_list_obj.save_to_csv now might be deprecated or wrapped
                 # For now let's use the new db method in leads_scrapping or manually here?
                 # Ideally leads_scrapping returns the object, we save it.
-                
+
                 # We'll save to DB first
-                print(f"   💾 Saving to Local Database...", end=" ")
+                print("   💾 Saving to Local Database...", end=" ")
                 new_db_count = business_list_obj.save_to_db()
                 print(f"Done (+{new_db_count} new).")
-                
+
                 # Save to CSV (Export)
                 clean_filename = f"{search_for}".replace(' ', '_').replace(',', '').replace('\n', '')
                 csv_path = business_list_obj.save_to_csv(clean_filename) # Appends to main file
@@ -376,7 +378,7 @@ def main():
                 print(f"\n❌ CRITICAL ERROR processing query '{search_for}': {query_error}")
                 print("   ⚠️  Skipping to next query to prevent crash...")
                 continue
-        
+
         browser.close()
 
 if __name__ == "__main__":

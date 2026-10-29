@@ -2,6 +2,7 @@ import json
 import os
 import time
 
+
 class JobManager:
     """
     Manages the state of a scraping job to allow for pausing and resuming.
@@ -23,7 +24,7 @@ class JobManager:
         """Loads state from disk if it exists with validation."""
         if os.path.exists(self.state_file):
             try:
-                with open(self.state_file, 'r') as f:
+                with open(self.state_file) as f:
                     state = json.load(f)
                     # Validate state structure
                     if not self._validate_state(state):
@@ -36,7 +37,7 @@ class JobManager:
             except Exception as e:
                 print(f"Error loading job state: {e}")
                 # If corrupt, we start fresh, keeping default current_state
-    
+
     def _validate_state(self, state):
         """Validates state file structure and data integrity."""
         # Check required fields
@@ -45,32 +46,32 @@ class JobManager:
             if field not in state:
                 print(f"Validation failed: Missing field '{field}' in job state")
                 return False
-        
+
         # Validate data types
         if not isinstance(state["completed_queries"], list):
             print("Validation failed: completed_queries must be a list")
             return False
-        
+
         if not isinstance(state["pending_queries"], list):
             print("Validation failed: pending_queries must be a list")
             return False
-        
+
         if not isinstance(state["total_leads_found"], (int, float)):
             print("Validation failed: total_leads_found must be a number")
             return False
-        
+
         # Validate status
         valid_statuses = ["IDLE", "RUNNING", "PAUSED", "COMPLETED", "STOPPED"]
         if state["status"] not in valid_statuses:
             print(f"Validation failed: Invalid status '{state['status']}'")
             return False
-        
+
         # Validate queries are strings
         for query in state["completed_queries"] + state["pending_queries"]:
             if not isinstance(query, str):
                 print(f"Validation failed: Query must be string, got {type(query)}")
                 return False
-        
+
         return True
 
     def save_state(self):
@@ -116,11 +117,11 @@ class JobManager:
 
     def has_unfinished_job(self):
         """Returns True if there is a job that is not COMPLETED and has pending queries."""
-        return (self.current_state["status"] != "COMPLETED" and 
+        return (self.current_state["status"] != "COMPLETED" and
                 len(self.current_state["pending_queries"]) > 0)
-    
+
     def clear_job(self):
-        """Clears the current job state.""" 
+        """Clears the current job state."""
         if os.path.exists(self.state_file):
             os.remove(self.state_file)
         self.__init__(self.state_file)

@@ -1,9 +1,23 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import os
 import sys
-import datetime
+
+# Ensure UTF-8 output encoding for emojis on Windows consoles
+try:
+    if sys.stdout:
+        reconfig_stdout = getattr(sys.stdout, 'reconfigure', None)
+        if callable(reconfig_stdout):
+            reconfig_stdout(encoding='utf-8', errors='replace')
+    if sys.stderr:
+        reconfig_stderr = getattr(sys.stderr, 'reconfigure', None)
+        if callable(reconfig_stderr):
+            reconfig_stderr(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 import random
+
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # Adjust path to find credentials in root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -15,7 +29,7 @@ def test_sheets():
     print("="*60)
     print("   GOOGLE SHEETS TEST   ")
     print("="*60)
-    
+
     if not os.path.exists(CREDENTIALS_FILE):
         print(f"❌ Error: {CREDENTIALS_FILE} not found.")
         return
@@ -23,8 +37,8 @@ def test_sheets():
     print("1. Authenticating...")
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-        client = gspread.authorize(creds)
+        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)  # type: ignore
+        client = gspread.authorize(creds)  # type: ignore
         print("✅ Authenticated.")
     except Exception as e:
         print(f"❌ Authentication Failed: {e}")

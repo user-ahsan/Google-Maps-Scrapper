@@ -1,7 +1,9 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+
 from .resource_utils import get_app_data_path
+
 
 def setup_logger(name="ScraperLogger"):
     """

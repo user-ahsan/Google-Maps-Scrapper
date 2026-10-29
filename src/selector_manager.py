@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import logging
 
 from .logger import setup_logger
 
@@ -15,13 +14,15 @@ class SelectorManager:
     2. Bundled 'assets/selectors.json' (_MEIPASS)
     3. Hardcoded defaults (Fallback)
     """
-    
+
     _defaults = {
         "search_box": [
             "input[name=\"q\"]",
-            "input#searchboxinput", 
-            "input#searchbox-input", 
-            "input[aria-label=\"Search Google Maps\"]"
+            "input#searchboxinput",
+            "input#searchbox-input",
+            "input[aria-label=\"Search Google Maps\"]",
+            "input[role=\"combobox\"]",
+            "input.searchboxinput"
         ],
         "feed": "div[role=\"feed\"]",
         "listings": "//a[contains(@href, \"https://www.google.com/maps/place\")]",
@@ -30,6 +31,12 @@ class SelectorManager:
         "address_button": "button[data-item-id=\"address\"]",
         "website_link": "a[data-item-id=\"authority\"]",
         "phone_button": "button[data-item-id*=\"phone:tel:\"]",
+        "category_button": [
+            "button[jsaction*=\"category\"]",
+            "button[aria-label*=\"Categories\"]",
+            "[data-item-id=\"category\"]",
+            "span.DkEaL"
+        ],
         "stars_aria": "span[role=\"img\"][aria-label*=\"stars\"]",
         "reviews_button": "div[role=\"button\"][aria-label*=\"reviews\"]",
         "reviews_generic": "[aria-label*=\"reviews\"]"
@@ -43,24 +50,24 @@ class SelectorManager:
         local_path = os.path.join(os.getcwd(), 'assets', 'selectors.json')
         if os.path.exists(local_path):
             try:
-                with open(local_path, 'r') as f:
+                with open(local_path) as f:
                     logger.debug(f"Loaded user selectors from {local_path}")
                     return self._merge_defaults(json.load(f))
             except Exception as e:
                 logger.warning(f"Failed to load user selectors: {e}")
 
         # 2. Check Bundled (PyInstaller)
-        if hasattr(sys, '_MEIPASS'):
-            base_path = sys._MEIPASS
+        base_path = getattr(sys, '_MEIPASS', None)
+        if base_path:
             bundled_path = os.path.join(base_path, 'assets', 'selectors.json')
             if os.path.exists(bundled_path):
                 try:
-                    with open(bundled_path, 'r') as f:
+                    with open(bundled_path) as f:
                         logger.debug(f"Loaded bundled selectors from {bundled_path}")
                         return self._merge_defaults(json.load(f))
                 except Exception as e:
                     logger.warning(f"Failed to load bundled selectors: {e}")
-        
+
         # 3. Fallback
         logger.debug("Using hardcoded default selectors")
         return self._defaults

@@ -1,13 +1,17 @@
 import json
 import os
+from collections.abc import Callable
+from typing import Any
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv as _load_dotenv
+    load_dotenv: Callable[..., Any] = _load_dotenv
     DOTENV_AVAILABLE = True
 except ImportError:
     DOTENV_AVAILABLE = False
-    def load_dotenv():
-        pass
+    def _fallback_load_dotenv(*args: Any, **kwargs: Any) -> bool:
+        return False
+    load_dotenv = _fallback_load_dotenv
 
 class ConfigManager:
     """
@@ -46,11 +50,11 @@ class ConfigManager:
         self.config_file = config_file
         self._load_env_file()
         self.config = self.load_config()
-    
+
     def _load_env_file(self):
         if not DOTENV_AVAILABLE:
             return
-            
+
         env_files = ['.env', '.env.local', '.env.example']
         for env_file in env_files:
             if os.path.exists(env_file):
@@ -64,7 +68,7 @@ class ConfigManager:
             config = self.DEFAULT_CONFIG.copy()
         else:
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file) as f:
                     data = json.load(f)
                     # Merge with defaults to ensure all keys exist
                     config = self.DEFAULT_CONFIG.copy()
@@ -72,7 +76,7 @@ class ConfigManager:
             except Exception as e:
                 print(f"Error loading config: {e}")
                 config = self.DEFAULT_CONFIG.copy()
-        
+
         # Override with environment variables if present
         # Env vars should match config keys with GMS_ prefix
         env_mapping = {
@@ -101,7 +105,7 @@ class ConfigManager:
             'GMS_BATCH_DB_OPS': 'batch_db_ops',
             'GMS_CACHE_SHEET_DATA': 'cache_sheet_data',
         }
-        
+
         for env_var, config_key in env_mapping.items():
             env_value = os.environ.get(env_var)
             if env_value is not None:
@@ -115,7 +119,7 @@ class ConfigManager:
                     except ValueError:
                         continue
                 config[config_key] = env_value
-        
+
         return config
 
     def save_config(self, data):
@@ -129,7 +133,7 @@ class ConfigManager:
 
     def get(self, key, default=None):
         return self.config.get(key, default)
-    
+
     def set(self, key, value):
         self.config[key] = value
         self._save_to_disk()

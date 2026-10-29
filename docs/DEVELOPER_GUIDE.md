@@ -12,7 +12,7 @@ The application is a hybrid **Python GUI (CustomTkinter)** wrapping a **Playwrig
     - **Controller**: Uses `src/controller.py` to communicate (Pause/Resume/Stop/Skip) with the scraper thread.
     - **Console**: Redirects `stdout` to a text box using a queue.
 
-2.  **Scraper Logic (`src/leads_scrapping.py` & `main_gui_wrapper.py`)**:
+2.  **Scraper Logic (`src/leads_scraping.py` & `main_gui_wrapper.py`)**:
     - **Wrapper**: Bridges the GUI args to the scraper function.
     - **Scraping Loop**: Run inside `scrape_data`. It checks `controller.is_paused()` and `controller.is_skipped()` inside the scrolling loop.
 

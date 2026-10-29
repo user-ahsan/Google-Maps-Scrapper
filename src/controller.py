@@ -1,5 +1,5 @@
 import threading
-import time
+
 
 class ScraperController:
     """
@@ -22,7 +22,7 @@ class ScraperController:
     def resume(self):
         """Signal the scraper to resume execution."""
         self._pause_event.set()
-    
+
     def skip(self):
         """Signal to skip the current item."""
         self._skip_event.set()
@@ -34,7 +34,7 @@ class ScraperController:
     def is_paused(self):
         """Check if currently paused."""
         return not self._pause_event.is_set()
-    
+
     def is_skipped(self):
         """Check if skip has been requested."""
         if self._skip_event.is_set():
